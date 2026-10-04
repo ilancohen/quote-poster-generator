@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Quote Quilt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link id="fontcss" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Abril+Fatface&family=Alfa+Slab+One&family=Archivo+Narrow:wght@400;700&family=Bebas+Neue&family=Bree+Serif&family=Caveat:wght@400;700&family=Cinzel:wght@400;700&family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Crimson+Pro:ital,wght@0,400;0,700;1,400&family=EB+Garamond:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Josefin+Sans:wght@300;400;700&family=Kalam:wght@400;700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Lora:ital,wght@0,400;0,700;1,400&family=Montserrat:wght@400;700;800&family=Oswald:wght@300;400;600&family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Raleway:wght@300;500;800&family=Rokkitt:wght@400;800&family=Special+Elite&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <main class="main">
+    <header class="head">
+      <h1>Quote Quilt</h1>
+      <p>Quotes in, packed poster out. Reroll the layout, restyle one piece, or drag the seams.</p>
+    </header>
+    <section class="stage">
+      <svg id="stage" viewBox="0 0 2000 1000" role="img" aria-label="Poster made of packed quotes">
+        <rect width="2000" height="1000" fill="#ffffff"/>
+        <text x="1000" y="510" text-anchor="middle" font-family="Georgia, serif" font-size="44" fill="#777777">Setting type…</text>
+      </svg>
+    </section>
+    <div class="bar">
+      <button class="btn primary" id="bReroll" type="button">Reroll</button>
+      <button class="btn" id="bRefine" type="button">Refine</button>
+      <button class="btn" id="bOptions" type="button">6 options</button>
+      <button class="btn" id="bUndo" type="button" disabled>Undo</button>
+      <button class="btn" id="bEdit" type="button" aria-pressed="false">Edit seams</button>
+      <button class="btn" id="bCopy" type="button">Copy SVG</button>
+    </div>
+    <div class="prog" aria-hidden="true"><i id="progBar"></i></div>
+    <p class="status" id="status" role="status"></p>
+    <div class="opts" id="opts" hidden></div>
+  </main>
+
+  <aside class="panel">
+    <section class="sec">
+      <h2>Poster</h2>
+      <div class="row"><label for="aspect">Shape</label>
+        <select id="aspect">
+          <option value="2:1">Wide 2:1</option><option value="3:2">Landscape 3:2</option>
+          <option value="1:1">Square</option><option value="3:4">Portrait 3:4</option><option value="2:3">Tall 2:3</option>
+        </select></div>
+      <div class="row r"><label for="gap">Seam gap</label><input id="gap" type="range" min="0" max="40" step="1"><output id="gapV"></output></div>
+      <div class="row r"><label for="contrast">Size contrast</label><input id="contrast" type="range" min="0" max="0.7" step="0.02"><output id="contrastV"></output></div>
+      <div class="row r"><label for="shaped">Shaped edges</label><input id="shaped" type="range" min="0" max="1" step="0.05"><output id="shapedV"></output></div>
+      <div class="row r"><label for="round">Round pieces</label><input id="round" type="range" min="0" max="1" step="0.05"><output id="roundV"></output></div>
+      <div class="row r"><label for="color">Color accents</label><input id="color" type="range" min="0" max="0.8" step="0.02"><output id="colorV"></output></div>
+      <div class="row r"><label for="just">Justified share</label><input id="just" type="range" min="0" max="1" step="0.05"><output id="justV"></output></div>
+      <div class="row"><label for="pal">Palette</label>
+        <select id="pal"><option value="ink">Ink on white</option><option value="riso">Blue riso</option><option value="night">Night</option><option value="mono">Newsprint</option></select></div>
+      <div class="row"><span>Typefaces</span>
+        <div class="chips" id="moods">
+          <label class="chip"><input type="checkbox" data-mood="serif"><span>Serif</span></label>
+          <label class="chip"><input type="checkbox" data-mood="sans"><span>Sans</span></label>
+          <label class="chip"><input type="checkbox" data-mood="display"><span>Display</span></label>
+          <label class="chip"><input type="checkbox" data-mood="script"><span>Script</span></label>
+          <label class="chip"><input type="checkbox" data-mood="mono"><span>Mono</span></label>
+        </div></div>
+      <div class="row"><label for="effort">Search effort</label>
+        <select id="effort"><option value="fast">Quick</option><option value="std">Standard</option><option value="deep">Deep</option></select></div>
+      <div class="row"><label for="seed">Seed</label><input id="seed" type="number" min="1" max="999999" step="1"></div>
+    </section>
+
+    <section class="sec">
+      <h2>Selected piece</h2>
+      <p class="hint" id="selHint">Click a piece of the poster to restyle it. Anything you change is locked, so Reroll and Refine leave it alone.</p>
+      <div id="selBody" hidden>
+        <p class="sel-text" id="selText"></p>
+        <div class="row"><label for="selFont">Font</label><select id="selFont"></select></div>
+        <div class="row"><label for="selWeight">Weight</label><select id="selWeight"></select></div>
+        <div class="row"><span>Style</span>
+          <div class="chips">
+            <label class="chip"><input type="checkbox" id="selItalic"><span>Italic</span></label>
+            <label class="chip"><input type="checkbox" id="selCaps"><span>Caps</span></label>
+            <label class="chip"><input type="checkbox" id="selLock"><span>Locked</span></label>
+          </div></div>
+        <div class="row"><label for="selAlign">Align</label>
+          <select id="selAlign"><option value="justify">Justified</option><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></div>
+        <div class="row"><label for="selColor">Color</label>
+          <select id="selColor"><option value="0">Ink</option><option value="1">Accent 1</option><option value="2">Accent 2</option></select></div>
+        <div class="row r"><label for="selEmph">Emphasis</label><input id="selEmph" type="range" min="0.5" max="2.5" step="0.05"><output id="selEmphV"></output></div>
+        <div class="btns">
+          <button class="btn" id="selReroll" type="button">Reroll look</button>
+          <button class="btn" id="selRound" type="button">Make round</button>
+          <button class="btn" id="selShape" type="button">Reshape edges</button>
+          <button class="btn" id="selFlat" type="button">Flatten edges</button>
+          <button class="btn" id="selSwap" type="button">Swap with…</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec">
+      <details open>
+        <summary>Quotes</summary>
+        <textarea id="quotesText" rows="14" spellcheck="false" aria-label="Quotes"></textarea>
+        <p class="note">Separate quotes with a blank line. Line breaks inside a quote are kept. Put the author on its own last line starting with a dash. These are public-domain samples; paste your own over them.</p>
+        <div class="btns"><button class="btn" id="bApply" type="button">Apply quotes</button></div>
+      </details>
+    </section>
+
+    <section class="sec">
+      <details id="ioBox">
+        <summary>Save / load</summary>
+        <textarea id="io" rows="5" spellcheck="false" aria-label="Settings JSON"></textarea>
+        <div class="btns">
+          <button class="btn" id="bCopyJson" type="button">Copy settings</button>
+          <button class="btn" id="bLoadJson" type="button">Load pasted</button>
+        </div>
+      </details>
+    </section>
+  </aside>
+</div>
+<script src="core.js"></script>
+<script src="regions.js"></script>
+<script src="typeset.js"></script>
+<script src="layout.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
