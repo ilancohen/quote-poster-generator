@@ -84,9 +84,9 @@ function fitsIn(F, K, s){
   }
   return true;
 }
-function largestSize(F, K){
+function largestSize(F, K, minSize = MIN_SIZE){
   const hi = Math.min(K === 1 ? F.H : F.H / (1 + (K - 1) * F.lh * LEAD_MIN), F.sCap);
-  let lo = MIN_SIZE;
+  let lo = minSize;
   if (hi < lo || !fitsIn(F, K, lo)) return 0;
   if (fitsIn(F, K, hi)) return hi;
   let top = hi;
@@ -104,18 +104,18 @@ function loosest(F, lines, s){
   return mx;
 }
 /* the largest size rarely sets best: step down a little while that buys much tighter lines */
-function candidate(F, K){
+function candidate(F, K, minSize = MIN_SIZE){
   /** @type {Candidate|null} */
   let best = null;
-  const s0 = largestSize(F, K);
-  for (const k of [1, 0.92, 0.85]) {
+  const s0 = largestSize(F, K, minSize);
+  for (const k of F.target ? [1] : [1, 0.92, 0.85]) {
     const s = s0 * k;
-    if (s < MIN_SIZE) break;
+    if (s < minSize) break;
     const bs = bands(F, K, s), br = bs && breakLines(F, K, s, bs);
     if (!br) continue;
     const loose = loosest(F, br.lines, s), {P} = placement(F, K, s);
     const leftover = Math.max(0, 1 - ((K - 1) * P + s) / F.H);
-    const q = Math.log(s) - 6 * leftover - 1.5 * Math.max(0, loose - 1.2);
+    const q = F.target ? Math.log(s) : Math.log(s) - 6 * leftover - 1.5 * Math.max(0, loose - 1.2);
     if (!best || q > best.q) best = {K, s, leftover, q, loose, lines:br.lines};
     if (loose <= 1.4) break;
   }
@@ -124,13 +124,13 @@ function candidate(F, K){
 /* Rank line counts by a cheap optimistic score, then run the exact breaker best-first until no
    remaining count can beat the best found. The optimistic looseness is the average stretch over all
    lines, which can't exceed the worst line's. */
-function chooseLines(F){
+function chooseLines(F, minSize = MIN_SIZE, thorough = false){
   const T = F.T, m = T.m, maxK = T.N;
   const sEst = Math.sqrt(F.area / (T.natEm * F.lh)) * 0.95;
   const K0 = clamp(1 + Math.round((F.H - sEst) / (sEst * F.lh)), 1, maxK);
   const bounds = [];
-  for (let K = Math.max(1, (K0 >> 1) - 2); K <= Math.min(maxK, 2 * K0 + 4); K++) {
-    const s = largestSize(F, K), bs = s && bands(F, K, s);
+  for (let K = thorough ? 1 : Math.max(1, (K0 >> 1) - 2); K <= (thorough ? maxK : Math.min(maxK, 2 * K0 + 4)); K++) {
+    const s = largestSize(F, K, minSize), bs = s && bands(F, K, s);
     if (!bs) continue;
     const {P} = placement(F, K, s);
     let sumW = 0;
@@ -138,14 +138,14 @@ function chooseLines(F){
     const slack = sumW - 0.4 * bs[K - 1].W - T.natEm * s;
     const cap = SP_UP * m.space * s * Math.max(0, T.n - K) + LS_UP * s * Math.max(0, F.chars - K);
     const loose = Math.min(4, Math.max(0, F.mode === 'j' ? (cap > 0 ? slack / cap : 4) : 3 * slack / sumW));
-    bounds.push({K, ub:Math.log(s) - 6 * Math.max(0, 1 - ((K - 1) * P + s) / F.H) - 1.5 * Math.max(0, loose - 1.2)});
+    bounds.push({K, ub:F.target ? Math.log(s) : Math.log(s) - 6 * Math.max(0, 1 - ((K - 1) * P + s) / F.H) - 1.5 * Math.max(0, loose - 1.2)});
   }
   bounds.sort((a, b) => b.ub - a.ub);
   /** @type {Candidate|null} */
   let best = null;
-  for (let i = 0; i < bounds.length && i < 6; i++) {
-    if (best && bounds[i].ub < best.q - 0.05) break;
-    const c = candidate(F, bounds[i].K);
+  for (let i = 0; i < bounds.length && (thorough || i < 6); i++) {
+    if (best && bounds[i].ub < best.q - (F.target ? 0 : 0.05)) break;
+    const c = candidate(F, bounds[i].K, minSize);
     if (c && (!best || c.q > best.q)) best = c;
   }
   return best;
@@ -258,27 +258,41 @@ function fitCell(c, st, D){
   const m = getMetrics(qs[c.q], st);
   let memo = fitMemo.get(m);
   if (!memo) fitMemo.set(m, memo = new Map());
-  const key = `${regionKey(c.region)}|${D.gap}|${st.align}`;
+  const key = `${regionKey(c.region)}|${D.gap}|justify|${qs[c.q].fontSize ?? 'auto'}`;
   let r = memo.get(key);
   if (!r) {
     if (memo.size > 400) memo.clear();
-    memo.set(key, r = fitShape(c.q, c.region, m, st.align, D.gap));
+    memo.set(key, r = fitShape(c.q, c.region, m, 'justify', D.gap));
   }
   Object.assign(c, r);
 }
 function fitShape(qi, region, m, align, gap){
   const q = qs[qi], E = erode(region, gap / 2), rect = isRect(E);
-  const c = {m, E, rect, eff:rect ? align : 'justify'};
+  const c = {m, E, rect, eff:align};
   const fail = () => Object.assign(c, {bad:1, s:4, P:4, K:0, lines:[], top:0, off:0, leftover:1, a:0, aw:0, badJ:0, maxF:0, rag:0, lastFill:1, fill:0, wpl:0});
-  if (E.n < 3) return fail();
+  if (!E.n) return fail();
   const T = streamOf(q, m), mode = c.eff === 'justify' ? 'j' : 'r', rows = [];
   for (let i = 0; i < E.n; i++) if (E.r[i] > E.l[i]) rows.push(E.r[i] - E.l[i]);
   // short quotes may run one line, so their measure is just the whole quote
-  const sCap = median(rows) / Math.min(MEASURE[mode], T.natEm);
+  const fontSize = q.fontSize ?? null;
+  const sCap = fontSize ?? median(rows) / Math.min(MEASURE[mode], T.natEm);
   const F = {E, T, H:E.n * DY, area:regionArea(E), lh:LH[m.f.c], mode, wTip:2.5 * median(m.w) + m.space, sCap,
-    chars:m.len.reduce((a, b) => a + b, 0)};
-  const ch = chooseLines(F);
-  if (!ch) return fail();
+    chars:m.len.reduce((a, b) => a + b, 0), target:fontSize !== null};
+  let ch = chooseLines(F, Math.min(MIN_SIZE, sCap), F.target);
+  if (!ch) {
+    let widest = 0;
+    for (let row = 1; row < E.n; row++) if (E.r[row] - E.l[row] > E.r[widest] - E.l[widest]) widest = row;
+    const width = E.r[widest] - E.l[widest];
+    if (width <= 2) return fail();
+    const minSize = Math.min(MIN_SIZE, sCap, width / T.natEm, DY / (1 + (T.N - 1) * F.lh * LEAD_MAX)) / 2;
+    for (let floor = MIN_SIZE; !ch && floor >= minSize; floor /= 2) ch = chooseLines(F, floor, true);
+    if (!ch) {
+      F.E = {i0:E.i0 + widest, n:1, l:E.l.subarray(widest, widest + 1), r:E.r.subarray(widest, widest + 1)};
+      F.H = DY; F.area = width * DY;
+      ch = chooseLines(F, minSize, true);
+    }
+  }
+  if (!ch) return align === 'justify' ? fitShape(qi, region, m, 'left', gap) : fail();
   const {K, s} = ch, pl = placement(F, K, s);
   Object.assign(c, {bad:0, s, K, P:pl.P, off:pl.off, top:pl.top, lines:ch.lines, aw:T.aw, a:T.hasA ? s * AUTHOR_SCALE : 0,
     leftover:ch.leftover});

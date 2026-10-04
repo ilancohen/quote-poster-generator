@@ -4,42 +4,66 @@
  * @property {SVGSVGElement} stage
  * @property {HTMLButtonElement} bReroll
  * @property {HTMLButtonElement} bRefine
- * @property {HTMLButtonElement} bOptions
  * @property {HTMLButtonElement} bUndo
- * @property {HTMLButtonElement} bEdit
+ * @property {HTMLButtonElement} bRedo
  * @property {HTMLButtonElement} bCopy
+ * @property {HTMLButtonElement} bDownloadSVG
+ * @property {HTMLButtonElement} bSeed
+ * @property {HTMLButtonElement} bCancel
+ * @property {HTMLInputElement} gapNum
  * @property {HTMLElement} progBar
  * @property {HTMLParagraphElement} status
- * @property {HTMLDivElement} opts
  * @property {HTMLSelectElement} aspect
  * @property {HTMLInputElement} gap
- * @property {HTMLOutputElement} gapV
  * @property {HTMLInputElement} contrast
  * @property {HTMLOutputElement} contrastV
  * @property {HTMLInputElement} shaped
  * @property {HTMLOutputElement} shapedV
  * @property {HTMLInputElement} round
  * @property {HTMLOutputElement} roundV
+ * @property {HTMLInputElement} symmetry
+ * @property {HTMLOutputElement} symmetryV
  * @property {HTMLInputElement} color
  * @property {HTMLOutputElement} colorV
- * @property {HTMLInputElement} just
- * @property {HTMLOutputElement} justV
- * @property {HTMLSelectElement} pal
+ * @property {HTMLDivElement} paletteSwatches
+ * @property {HTMLDivElement} selectedColors
+ * @property {HTMLOutputElement} alignmentState
+ * @property {HTMLElement} panel
+ * @property {HTMLDivElement} uiTooltip
+ * @property {HTMLDetailsElement} inspector
+ * @property {HTMLButtonElement} bResetPoster
+ * @property {HTMLButtonElement} bResetGenerate
+ * @property {HTMLButtonElement} bResetSelected
  * @property {HTMLDivElement} moods
  * @property {HTMLSelectElement} effort
  * @property {HTMLInputElement} seed
  * @property {HTMLParagraphElement} selHint
  * @property {HTMLDivElement} selBody
  * @property {HTMLParagraphElement} selText
+ * @property {HTMLButtonElement} selDeselect
+ * @property {HTMLButtonElement} selEdit
+ * @property {HTMLButtonElement} selDelete
+ * @property {HTMLDetailsElement} quotesBox
+ * @property {HTMLOutputElement} quoteCount
+ * @property {HTMLOListElement} quoteList
+ * @property {HTMLParagraphElement} quotesEmpty
+ * @property {HTMLFormElement} quoteEditor
+ * @property {HTMLHeadingElement} quoteEditorTitle
+ * @property {HTMLTextAreaElement} quoteText
+ * @property {HTMLInputElement} quoteAuthor
+ * @property {HTMLButtonElement} bAddQuote
+ * @property {HTMLButtonElement} bCancelQuote
+ * @property {HTMLParagraphElement} edgeState
  * @property {HTMLSelectElement} selFont
  * @property {HTMLSelectElement} selWeight
  * @property {HTMLInputElement} selItalic
  * @property {HTMLInputElement} selCaps
- * @property {HTMLInputElement} selLock
- * @property {HTMLSelectElement} selAlign
- * @property {HTMLSelectElement} selColor
  * @property {HTMLInputElement} selEmph
+ * @property {HTMLInputElement} selEmphNum
  * @property {HTMLOutputElement} selEmphV
+ * @property {HTMLInputElement} selFontSize
+ * @property {HTMLOutputElement} selFontSizeV
+ * @property {HTMLDivElement} accentSwatches
  * @property {HTMLButtonElement} selReroll
  * @property {HTMLButtonElement} selRound
  * @property {HTMLButtonElement} selShape
@@ -51,6 +75,8 @@
  * @property {HTMLButtonElement} bCopyJson
  * @property {HTMLButtonElement} bLoadJson
  * @property {HTMLButtonElement} bApply
+ * @property {HTMLButtonElement} bResetQuotes
+ * @property {HTMLButtonElement} bClearJSON
  */
 /** @template {keyof UIElements} K @param {K} id @returns {UIElements[K]} */
 const $ = id => /** @type {UIElements[K]} */ (document.getElementById(id));
@@ -62,8 +88,8 @@ const selectFromEvent = event => /** @type {HTMLSelectElement} */ (event.current
 /** @typedef {'serif'|'sans'|'display'|'script'|'mono'} FontCategory */
 /** @typedef {{n:string,c:FontCategory,w:number[],i?:number,caps?:number,sys?:number}} FontDef */
 /** @typedef {{w:number[],len:number[],br:boolean[],space:number,track:number,wt:number,it:number,caps:number,f:FontDef}} FontMetrics */
-/** @typedef {{font:string,wi:number,italic:number,caps:number,align:'justify'|'left'|'center'|'right',color:number,lock:number,jit:number}} Style */
-/** @typedef {{id:string,text:string,tokens:string[],brAfter:boolean[],author:string,chars:number,emph:number,st:Style|null}} Quote */
+/** @typedef {{font:string,wi:number,italic:number,caps:number,color:number,lock:number,jit:number}} Style */
+/** @typedef {{id:string,text:string,tokens:string[],brAfter:boolean[],author:string,chars:number,emph:number,fontSize:number|null,st:Style|null}} Quote */
 /** @typedef {{k:'flat'|'arc'|'ell'|'wave'|'notch'|'step'|'slant'|'scurve',a:number,p:number,w:number}} Seam */
 /** @typedef {{q:number,id?:number,_w?:number}|{d:'x'|'y',a:TreeNode,b:TreeNode,s:number,e?:Seam,_w?:number}} TreeNode */
 /** @typedef {{i0:number,n:number,l:Float64Array,r:Float64Array}} Region */
@@ -129,12 +155,18 @@ const PALS = {
   ink:   {paper:'#ffffff', ink:'#14151a', a1:'#8a1c2b', a2:'#3f6fd1'},
   riso:  {paper:'#eef1f4', ink:'#1b2a63', a1:'#e2512d', a2:'#2f7f86'},
   night: {paper:'#14161c', ink:'#ecebe6', a1:'#f2b84b', a2:'#7aa2ff'},
-  mono:  {paper:'#f2f2ef', ink:'#111111', a1:'#111111', a2:'#5a5a5a'}
+  mono:  {paper:'#f2f2ef', ink:'#111111', a1:'#111111', a2:'#5a5a5a'},
+  garden:{paper:'#f4f6ed', ink:'#203b32', a1:'#c04432', a2:'#a37a20'},
+  pool:  {paper:'#f0f7f6', ink:'#103b46', a1:'#da4b35', a2:'#227a6b'},
+  rose:  {paper:'#fff6f2', ink:'#2d3033', a1:'#b52e4a', a2:'#337f78'},
+  marigold:{paper:'#fff6df', ink:'#342b28', a1:'#bb3028', a2:'#165e75'}
 };
 
 /* ---------- state ---------- */
-const cfg = {aspect:'2:1', gap:14, contrast:0.3, color:0.3, just:0.85, pal:'ink',
-  moods:{serif:1, sans:1, display:1, script:1, mono:1}, effort:'std', seed:7, shaped:0.45, round:0.3};
+const cfg = {aspect:'2:1', gap:14, contrast:0.3, color:0.3, pal:'ink',
+  moods:{serif:1, sans:1, display:1, script:1, mono:1}, effort:'std', seed:7, shaped:0.45, round:0.3, symmetry:0.75};
+const DEFAULT_CFG = clone(cfg);
+let activeContrast = cfg.contrast, activeRound = cfg.round;
 /** @type {Quote[]} */
 let qs = [];            // quotes: {id,text,tokens,author,chars,emph,st}
 /** @type {TreeNode|null} */
@@ -155,14 +187,30 @@ function dims(){
   return {W, H, m:30, gap:cfg.gap};
 }
 function activePool(){
-  let p = FONTS.filter(f => avail.has(f.n) && cfg.moods[f.c]);
-  if (!p.length) p = FONTS.filter(f => avail.has(f.n));
-  if (!p.length) p = SYS;
+  const available = FONTS.filter(f => avail.has(f.n));
+  if (!available.length) {
+    const selectedSystem = SYS.filter(f => cfg.moods[f.c]);
+    return selectedSystem.length ? selectedSystem : SYS;
+  }
+  const selectedWeb = available.filter(f => cfg.moods[f.c]);
+  const selectedFallback = SYS.filter(f => cfg.moods[f.c] && !available.some(font => font.c === f.c));
+  const p = selectedWeb.concat(selectedFallback);
+  if (!p.length) return available;
   return p;
 }
 
 /* ---------- quotes ---------- */
 function hashStr(s){let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return 'q'+(h>>>0).toString(36)}
+function quoteFromFields(rawText, author){
+  const lines = rawText.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const text = lines.join(' ');
+  const tokens = [], brAfter = [];
+  lines.forEach((line, lineIndex) => {
+    const words = line.split(/\s+/);
+    words.forEach((word, wordIndex) => { tokens.push(word); brAfter.push(wordIndex === words.length - 1 && lineIndex < lines.length - 1); });
+  });
+  return {id:hashStr(text + '|' + author), text, tokens, brAfter, author, chars:text.length, emph:1, fontSize:null, st:null};
+}
 function parseQuotes(txt){
   return txt.replace(/\r/g, '').split(/\n\s*\n/).map(b => b.trim()).filter(Boolean).map(b => {
     const lines = b.split('\n').map(l => l.trim()).filter(Boolean);
@@ -174,13 +222,7 @@ function parseQuotes(txt){
       const m2 = last.match(/^(.*[.!?"”'’])\s+(?:—|–|--)\s+(.{2,60})$/);
       if (m2) { lines[lines.length - 1] = m2[1]; author = m2[2]; }
     }
-    const text = lines.join(' ');
-    const tokens = [], brAfter = [];
-    lines.forEach((ln, k) => {
-      const ws = ln.split(/\s+/);
-      ws.forEach((w, j) => { tokens.push(w); brAfter.push(j === ws.length - 1 && k < lines.length - 1); });
-    });
-    return {id:hashStr(text + '|' + author), text, tokens, brAfter, author, chars:text.length, emph:1, st:null};
+    return quoteFromFields(lines.join('\n'), author);
   });
 }
 
@@ -193,11 +235,9 @@ function randStyle(rng, q){
   const wi = bold ? f.w.length - 1 - ((rng() < 0.4 && f.w.length > 2) ? 1 : 0) : regIndex(f);
   const italic = (f.i && rng() < 0.22) ? 1 : 0;
   const caps = f.caps ? 1 : (rng() < 0.14 ? 1 : 0);
-  const r = rng();
-  const align = r < cfg.just ? 'justify' : (r < cfg.just + (1 - cfg.just) * 0.55 ? 'left' : (rng() < 0.6 ? 'center' : 'right'));
   const cr = rng();
   const color = cr < cfg.color * 0.5 ? 1 : (cr < cfg.color ? 2 : 0);
-  return {font:f.n, wi, italic, caps, align, color, lock:0, jit:0.82 + rng() * 0.4};
+  return {font:f.n, wi, italic, caps, color, lock:0, jit:0.82 + rng() * 0.4};
 }
 
 /* ---------- measuring ---------- */

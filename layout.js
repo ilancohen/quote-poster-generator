@@ -3,17 +3,22 @@
    d is the cut axis, e the seam profile, s a user nudge to the area split. */
 function targets(sts){
   const med = median(qs.map(q => q.chars + 16));
-  return qs.map((q, i) => Math.pow(med / (q.chars + 16), cfg.contrast) * q.emph * sts[i].jit);
+  return qs.map((q, i) => Math.pow(med / (q.chars + 16), activeContrast) * q.emph * sts[i].jit);
 }
 function weightsOf(sts){
   const f = targets(sts);
   return {f, wts:qs.map((q, i) => (q.chars + 16) * f[i] * f[i])};
 }
-function randomSeam(rng, d, force){
+function randomSeam(rng, d, force, symmetry = 0.75){
   if (!force && rng() >= cfg.shaped) return {...FLAT};
-  const kinds = SEAM_KINDS[d], k = kinds[(rng() * kinds.length) | 0], sign = rng() < 0.5 ? -1 : 1;
+  const kinds = SEAM_KINDS[d];
+  const symmetric = d === 'x' ? ['arc','ell','notch'] : ['scurve'];
+  const pool = rng() < symmetry ? symmetric : kinds;
+  const k = pool[(rng() * pool.length) | 0], sign = rng() < 0.5 ? -1 : 1;
   const a = k === 'ell' ? 0.5 + rng() * 0.4 : 0.18 + rng() * 0.42;
-  return {k, a:sign * a, p:0.15 + rng() * 0.5, w:0.2 + rng() * 0.3};
+  const w = 0.2 + rng() * 0.3;
+  const p = symmetry && (k === 'ell' || k === 'notch') ? (1 - w) / 2 : 0.15 + rng() * 0.5;
+  return {k, a:sign * a, p, w};
 }
 function tweakSeam(e, rng){
   const q = {...e}, t = rng();
@@ -48,7 +53,7 @@ function buildTree(order, wts, rng, w, h, ctr){
   const d = (rng() < 0.85) === (bx <= by) ? 'x' : 'y';
   const a = d === 'x' ? buildTree(A, wts, rng, w * r, h, ctr) : buildTree(A, wts, rng, w, h * r, ctr);
   const b = d === 'x' ? buildTree(B, wts, rng, w * (1 - r), h, ctr) : buildTree(B, wts, rng, w, h * (1 - r), ctr);
-  return {d, a, b, s:0, e:randomSeam(rng, d)};
+  return {d, a, b, s:0, e:randomSeam(rng, d, false, cfg.symmetry)};
 }
 function calcW(n, wts){ return n.q !== undefined ? (n._w = wts[n.q]) : (n._w = calcW(n.a, wts) + calcW(n.b, wts)); }
 function collect(n, I, L){ if (n.q !== undefined) { L.push(n); return; } I.push(n); collect(n.a, I, L); collect(n.b, I, L); }
@@ -171,9 +176,9 @@ function evaluate(tr, sts, D){
     if (a.box.x > b.box.x + b.box.w + 1 || b.box.x > a.box.x + a.box.w + 1) continue;
     if (touching(a.region, b.region)) same++;
   }
-  const rounds = cfg.round > 0 ? countRound(tr, nodes, cells) : 0;
-  const roundP = Math.max(0, Math.round(cfg.round * n * 0.15) - rounds);
-  const score = 40 * vr + 15 * under + 1500 * left / n + 30 * asp / n + 14 * jb / n + 8 * rag / n + 10 * lastP / n +
+  const rounds = activeRound > 0 ? countRound(tr, nodes, cells) : 0;
+  const roundP = Math.max(0, Math.round(activeRound * n * 0.15) - rounds);
+  const score = bad ? Infinity : 40 * vr + 15 * under + 1500 * left / n + 30 * asp / n + 14 * jb / n + 8 * rag / n + 10 * lastP / n +
     10 * wplP / n + 500 * bad + 30 * small + 1.5 * same + 4 * roundP;
   return {cells, nodes, score, f, rounds};
 }
@@ -188,6 +193,22 @@ function dragFrac(nd, px, py){
   return seamFrac(G, nd.total, c);
 }
 
+function adjustSeam(tr, node, value, sts, D){
+  const previous = node.s || 0, desired = clamp(value, -0.8, 0.8);
+  const visible = () => evaluate(tr, sts, D).cells.every(c => !c.bad);
+  node.s = desired;
+  if (visible()) return;
+  node.s = previous;
+  if (!visible()) return;
+  let lo = 0, hi = 1;
+  for (let pass = 0; pass < 8; pass++) {
+    const mid = (lo + hi) / 2;
+    node.s = previous + (desired - previous) * mid;
+    if (visible()) lo = mid; else hi = mid;
+  }
+  node.s = previous + (desired - previous) * lo;
+}
+
 /* ---------- search ---------- */
 const effortN = () => ({fast:120, std:360, deep:1200}[cfg.effort] || 360);
 const effortIters = () => ({fast:500, std:1300, deep:3500}[cfg.effort] || 1300);
@@ -198,7 +219,7 @@ async function search(seed, n, keep, token){
   const rng = mulberry32(seed >>> 0), D = dims();
   const out = [], idx = qs.map((_, k) => k);
   for (let i = 0; i < n; i++) {
-    const sts = qs.map(q => (q.st && q.st.lock) ? q.st : randStyle(rng, q));
+    const sts = qs.map(q => randStyle(rng, q));
     const {wts} = weightsOf(sts);
     const t = buildTree(shuffle(idx.slice(), rng), wts, rng, D.W - 2 * D.m, D.H - 2 * D.m, {n:0});
     if (cfg.round > 0) roundSome(t, rng, sts, D);
@@ -223,8 +244,8 @@ function mutate(cur, rng, fine){
     case 'flip': { const nd = pick(I); nd.d = nd.d === 'x' ? 'y' : 'x'; nd.s = 0; nd.e = randomSeam(rng, nd.d); break; }
     case 'nudge': { const nd = pick(I); nd.s = clamp((nd.s || 0) + (rng() - 0.5) * (fine ? 0.07 : 0.16), -0.4, 0.4); break; }
     case 'restyle': {
-      const free = qs.map((q, i) => i).filter(i => !qs[i].st.lock);
-      if (free.length) { const i = pick(free); p.sts[i] = randStyle(rng, qs[i]); }
+      const i = pick(qs.map((q, index) => index));
+      if (i !== undefined) p.sts[i] = randStyle(rng, qs[i]);
       break;
     }
     case 'mirror': { const nd = pick(I), t = nd.a; nd.a = nd.b; nd.b = t; break; }
@@ -238,16 +259,22 @@ function mutate(cur, rng, fine){
   }
   return p;
 }
-async function anneal(token){
+async function anneal(token, iterations = 1300){
   const D = dims(), rng = mulberry32((Math.random() * 1e9) | 0);
   let cur = {tree:clone(tree), sts:qs.map(q => ({...q.st}))};
   let cres = evaluate(cur.tree, cur.sts, D);
   const start = cres.score;
   let best = cur, bres = cres;
-  const N = effortIters(), T0 = Math.max(0.6, cres.score * 0.08);
+  const N = iterations, T0 = Math.max(0.6, cres.score * 0.08);
   for (let i = 0; i < N; i++) {
     const T = T0 * 0.02 ** (i / N);
-    const prop = mutate(cur, rng, false);
+    const prop = {tree:clone(cur.tree), sts:cur.sts.map(st => ({...st}))};
+    const internal = [], leaves = [];
+    collect(prop.tree, internal, leaves);
+    if (internal.length) {
+      const node = internal[(rng() * internal.length) | 0];
+      node.s = clamp((node.s || 0) + (rng() - 0.5) * 0.12, -0.4, 0.4);
+    }
     const res = evaluate(prop.tree, prop.sts, D);
     const d = res.score - cres.score;
     if (d < 0 || rng() < Math.exp(-d / T)) {
