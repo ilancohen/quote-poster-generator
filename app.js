@@ -13,7 +13,39 @@ let bodyGesture = null;
 let suppressClick = false;
 let lastSnap = '';
 let DEFAULT_QUOTES = '';
+let STARTER_QUOTES = '';
 let editingQuoteId = null;
+/** @type {string|null} generation prefs last applied by New layout / regenerate */
+let appliedGenPrefs = null;
+
+// Starter set (mixed lengths): Tolkien short; Emerson enthusiasm; Shakespeare thinking;
+// Goethe garden; Rilke questions; Kerouac mad ones.
+const STARTER_TEXT_PREFIXES = [
+  'Not all those who wander are lost.',
+  'Nothing great was ever achieved without enthusiasm.',
+  'There is nothing either good or bad, but thinking makes it so.',
+  '"To know someone with whom you can feel there is understanding',
+  '"I beg you to have patience with everything unresolved',
+  'The people for me are the mad ones',
+];
+
+function formatQuoteBlock(quote){
+  return `${quote.text.trim()}\n— ${quote.author.trim()}`;
+}
+function genPrefsSnapshot(){
+  return JSON.stringify({
+    contrast:cfg.contrast, shaped:cfg.shaped, round:cfg.round, symmetry:cfg.symmetry,
+    moods:cfg.moods, effort:cfg.effort, color:cfg.color
+  });
+}
+function updateGenPrefsHint(){
+  const pending = appliedGenPrefs !== null && genPrefsSnapshot() !== appliedGenPrefs;
+  $('genPrefsHint').hidden = !pending;
+}
+function markGenPrefsApplied(){
+  appliedGenPrefs = genPrefsSnapshot();
+  updateGenPrefsHint();
+}
 
 async function loadDefaultQuotes(){
   const response = await fetch('quotes.json');
@@ -22,7 +54,13 @@ async function loadDefaultQuotes(){
   if (!data || !Array.isArray(data.quotes) || !data.quotes.every(quote => quote && typeof quote.text === 'string' && quote.text.trim() && typeof quote.author === 'string')) {
     throw new Error('Quote data is malformed.');
   }
-  return data.quotes.map(quote => `${quote.text.trim()}\n— ${quote.author.trim()}`).join('\n\n');
+  const full = data.quotes.map(formatQuoteBlock).join('\n\n');
+  const starters = STARTER_TEXT_PREFIXES.map(prefix => {
+    const quote = data.quotes.find(entry => entry.text.trim().startsWith(prefix));
+    if (!quote) throw new Error(`Starter quote missing: ${prefix.slice(0, 40)}…`);
+    return formatQuoteBlock(quote);
+  });
+  return {full, starter:starters.join('\n\n')};
 }
 
 const stage = $('stage');
@@ -276,7 +314,7 @@ async function exportSVG(){
 
 /* ---------- history ---------- */
 const snap = () => JSON.stringify({
-  tree, cfg, activeContrast, activeRound, quotes:quoteSource(), selectedId:sel >= 0 && qs[sel] ? qs[sel].id : null,
+  tree, cfg, activeContrast, activeRound, appliedGenPrefs, quotes:quoteSource(), selectedId:sel >= 0 && qs[sel] ? qs[sel].id : null,
   qs:qs.map(q => ({id:q.id, text:q.text, tokens:q.tokens, brAfter:q.brAfter, author:q.author, st:q.st, emph:q.emph, fontSize:q.fontSize}))
 }, (k, v) => k === '_w' ? undefined : v);
 function commit(){
@@ -302,6 +340,8 @@ function restore(s){
   sel = qs.findIndex(q => q.id === selectedId);
   closeQuoteEditor();
   syncControls(); saveLocal(); mcache.clear(); acache.clear();
+  appliedGenPrefs = typeof j.appliedGenPrefs === 'string' || j.appliedGenPrefs === null ? j.appliedGenPrefs : genPrefsSnapshot();
+  updateGenPrefsHint();
   render(); updateSel();
 }
 function undo(){
@@ -373,6 +413,7 @@ async function regenerate(opts = {}){
   applyEntry(best);
   busySnapshot = '';
   setBusy(false);
+  markGenPrefsApplied();
   render(); updateSel(); commit();
   say(`Best of ${n} layouts, seed ${cfg.seed}.`);
 }
@@ -392,7 +433,7 @@ async function refine(){
   busySnapshot = '';
   setBusy(false);
   if (t.score < r.from - 1e-6) { applyEntry(t); render(); updateSel(); commit(); say('Refined. The layout scores better than before.'); }
-  else say('Nothing better found. Try Reroll, or run Refine again.');
+  else say('Nothing better found. Try New layout, or run Refine again.');
 }
 /* ---------- selection panel ---------- */
 const wLabel = {300:'Light', 400:'Regular', 500:'Medium', 600:'Semibold', 700:'Bold', 800:'Extra bold', 900:'Black'};
@@ -647,7 +688,7 @@ function syncControls(){
 function strength(value, labels){ return labels[Math.min(labels.length - 1, Math.round(value * (labels.length - 1)))]; }
 function finishPreference(key, step, min, max){
   cfg[key] = clamp(Math.round(cfg[key] / step) * step, min, max);
-  saveLocal(); syncControls(); commit();
+  saveLocal(); syncControls(); updateGenPrefsHint(); commit();
 }
 function toJSON(){
   return JSON.stringify({v:2, cfg, activeContrast, activeRound, quotes:quoteSource(), tree, styles:sts(), emph:qs.map(q => q.emph), fontSizes:qs.map(q => q.fontSize)}, (k, v) => k === '_w' ? undefined : v);
@@ -753,12 +794,14 @@ function loadJSON(){
   });
   syncControls();
   if (!qs.length) {
+    markGenPrefsApplied();
     finishQuoteChange('Settings loaded.');
   } else if (j.tree) {
     tree = clone(j.tree);
     const internal = [], leaves = []; collect(tree, internal, leaves);
     internal.forEach(node => { if (!Number.isFinite(node.s)) node.s = 0; if (!node.e) node.e = {...FLAT}; });
     if (leaves.some(l => l.id === undefined)) assignIds(tree);
+    markGenPrefsApplied();
     render(); updateSel(); commit(); say('Settings loaded.');
   }
   else regenerate({restore:previous});
@@ -809,7 +852,7 @@ $('bApply').addEventListener('click', async () => {
 });
 
 $('aspect').addEventListener('change', e => { cfg.aspect = selectFromEvent(e).value; render(); saveLocal(); commit(); });
-$('effort').addEventListener('change', e => { cfg.effort = selectFromEvent(e).value; saveLocal(); commit(); });
+$('effort').addEventListener('change', e => { cfg.effort = selectFromEvent(e).value; saveLocal(); updateGenPrefsHint(); commit(); });
 $('seed').addEventListener('change', e => { const input = inputFromEvent(e); cfg.seed = clamp(parseInt(input.value, 10) || 1, 1, 999999); input.value = String(cfg.seed); saveLocal(); commit(); });
 $('paletteSwatches').addEventListener('click', e => {
   const button = e.target instanceof Element ? e.target.closest('[data-palette]') : null;
@@ -821,16 +864,16 @@ function updateGap(value){ cfg.gap = clamp(+value || 0, 0, 40); $('gap').value =
 $('gap').addEventListener('input', e => updateGap(inputFromEvent(e).value));
 $('gapNum').addEventListener('input', e => updateGap(inputFromEvent(e).value));
 $('gap').addEventListener('change', commit); $('gapNum').addEventListener('change', commit);
-$('contrast').addEventListener('input', e => { cfg.contrast = +inputFromEvent(e).value; $('contrastV').textContent = strength(cfg.contrast, ['Subtle','Gentle','Balanced','Strong','Dramatic']); saveLocal(); });
-$('shaped').addEventListener('input', e => { cfg.shaped = +inputFromEvent(e).value; $('shapedV').textContent = strength(cfg.shaped, ['Fewer','Light','Balanced','Many','More']); saveLocal(); });
-$('round').addEventListener('input', e => { cfg.round = +inputFromEvent(e).value; $('roundV').textContent = strength(cfg.round, ['None','Light','Balanced','Many','More']); saveLocal(); });
-$('symmetry').addEventListener('input', e => { cfg.symmetry = +inputFromEvent(e).value; $('symmetryV').textContent = strength(cfg.symmetry, ['Freeform','Low','Balanced','High','Symmetrical']); saveLocal(); });
+$('contrast').addEventListener('input', e => { cfg.contrast = +inputFromEvent(e).value; $('contrastV').textContent = strength(cfg.contrast, ['Subtle','Gentle','Balanced','Strong','Dramatic']); saveLocal(); updateGenPrefsHint(); });
+$('shaped').addEventListener('input', e => { cfg.shaped = +inputFromEvent(e).value; $('shapedV').textContent = strength(cfg.shaped, ['Fewer','Light','Balanced','Many','More']); saveLocal(); updateGenPrefsHint(); });
+$('round').addEventListener('input', e => { cfg.round = +inputFromEvent(e).value; $('roundV').textContent = strength(cfg.round, ['None','Light','Balanced','Many','More']); saveLocal(); updateGenPrefsHint(); });
+$('symmetry').addEventListener('input', e => { cfg.symmetry = +inputFromEvent(e).value; $('symmetryV').textContent = strength(cfg.symmetry, ['Freeform','Low','Balanced','High','Symmetrical']); saveLocal(); updateGenPrefsHint(); });
 $('contrast').addEventListener('change', () => finishPreference('contrast', 0.02, 0, 0.7));
 $('shaped').addEventListener('change', () => finishPreference('shaped', 0.05, 0, 1));
 $('round').addEventListener('change', () => finishPreference('round', 0.05, 0, 1));
 $('symmetry').addEventListener('change', () => finishPreference('symmetry', 0.05, 0, 1));
 $('color').addEventListener('input', e => {
-  cfg.color = +inputFromEvent(e).value; $('colorV').textContent = `${Math.round(cfg.color * 100)}%`; saveLocal();
+  cfg.color = +inputFromEvent(e).value; $('colorV').textContent = `${Math.round(cfg.color * 100)}%`; saveLocal(); updateGenPrefsHint();
 });
 $('color').addEventListener('change', () => finishPreference('color', 0.02, 0, 0.8));
 /** @type {NodeListOf<HTMLInputElement>} */
@@ -840,7 +883,7 @@ moodInputs.forEach(i => i.addEventListener('change', () => {
   if (mood) cfg.moods[mood] = i.checked ? 1 : 0;
   const active = Object.values(cfg.moods).some(Boolean);
   if (!active) { i.checked = true; if (mood) cfg.moods[mood] = 1; say('Choose at least one typeface category.'); return; }
-  saveLocal(); commit();
+  saveLocal(); updateGenPrefsHint(); commit();
 }));
 
 $('selFont').addEventListener('change', e => editSel(st => {
@@ -882,7 +925,6 @@ $('selEmph').addEventListener('input', e => updateEmph(inputFromEvent(e).value))
 $('selEmphNum').addEventListener('input', e => updateEmph(inputFromEvent(e).value));
 $('selEmph').addEventListener('change', () => { previewingEmph = false; render(); commit(); });
 $('selEmphNum').addEventListener('change', () => { previewingEmph = false; render(); commit(); });
-$('selDeselect').addEventListener('click', () => { sel = -1; swapMode = false; swapDestination = -1; render(); updateSel(); });
 $('selReroll').addEventListener('click', () => { if (sel < 0) return; qs[sel].st = randStyle(Math.random); render(); updateSel(); commit(); });
 $('selRound').addEventListener('click', () => {
   if (sel < 0 || !tree) return;
@@ -932,7 +974,7 @@ function resetPoster(){
 function resetGenerate(){
   for (const key of ['contrast','color','shaped','round','symmetry','effort','seed']) cfg[key] = DEFAULT_CFG[key];
   cfg.moods = clone(DEFAULT_CFG.moods);
-  syncControls(); saveLocal(); commit();
+  syncControls(); saveLocal(); updateGenPrefsHint(); commit();
 }
 function resetSelectedQuote(){
   if (sel < 0) return;
@@ -1065,9 +1107,13 @@ stage.addEventListener('click', e => {
 
 /* ---------- boot ---------- */
 async function boot(){
-  try { DEFAULT_QUOTES = await loadDefaultQuotes(); }
+  try {
+    const loaded = await loadDefaultQuotes();
+    DEFAULT_QUOTES = loaded.full;
+    STARTER_QUOTES = loaded.starter;
+  }
   catch (error) { say(error.message || 'Could not load the default quotes.'); return; }
-  $('quotesText').value = DEFAULT_QUOTES;
+  $('quotesText').value = STARTER_QUOTES;
   restoreLocal();
   syncControls();
   setQuotes($('quotesText').value, true);

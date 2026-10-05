@@ -40,9 +40,9 @@
  * @property {HTMLParagraphElement} selHint
  * @property {HTMLDivElement} selBody
  * @property {HTMLParagraphElement} selText
- * @property {HTMLButtonElement} selDeselect
  * @property {HTMLButtonElement} selEdit
  * @property {HTMLButtonElement} selDelete
+ * @property {HTMLParagraphElement} genPrefsHint
  * @property {HTMLDetailsElement} quotesBox
  * @property {HTMLOutputElement} quoteCount
  * @property {HTMLOListElement} quoteList

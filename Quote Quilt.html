@@ -14,6 +14,7 @@
   <main class="main">
     <header class="head">
       <h1>Quote Quilt</h1>
+      <p>Edit quotes → New layout → drag seams or download.</p>
     </header>
     <section class="stage">
       <svg id="stage" viewBox="0 0 2000 1000" role="group" tabindex="0" aria-label="Quote poster. Use arrow keys to move focus between quotes, then Enter to select.">
@@ -22,7 +23,7 @@
       </svg>
     </section>
     <div class="bar">
-      <button class="btn primary" id="bReroll" type="button" data-tooltip="Generate a new arrangement using the current generation preferences.">Reroll</button>
+      <button class="btn primary" id="bReroll" type="button" data-tooltip="Generate a new arrangement using the current generation preferences.">New layout</button>
       <button class="btn" id="bRefine" type="button" data-tooltip="Adjust seam positions in the current arrangement without swapping or restyling quotes.">Refine spacing</button>
       <button class="btn icon" id="bUndo" type="button" aria-label="Undo" data-tooltip="Undo the last poster or settings change." disabled>↶</button>
       <button class="btn icon" id="bRedo" type="button" aria-label="Redo" data-tooltip="Redo the last undone change." disabled>↷</button>
@@ -61,11 +62,11 @@
   <aside class="panel" id="panel">
     <details class="sec inspector" id="inspector">
       <summary>Selected quote</summary>
-      <button class="btn box-reset inspector-reset" id="bResetSelected" type="button" data-tooltip="Reset this quote's style, font-size target, relative size, and nearby boundaries." disabled>Reset quote</button>
+      <button class="btn box-reset inspector-reset" id="bResetSelected" type="button" data-tooltip="Reset this quote's style, font-size target, emphasis, and nearby boundaries." disabled>Reset quote</button>
       <p class="hint" id="selHint">No quote selected</p>
       <div id="selBody" hidden>
         <p class="sel-text" id="selText"></p>
-        <div class="btns"><button class="btn" id="selEdit" type="button">Edit text</button><button class="btn danger" id="selDelete" type="button" data-tooltip="Delete this quote from the poster. Undo restores it.">Delete quote</button><button class="btn" id="selDeselect" type="button">Deselect</button></div>
+        <div class="btns"><button class="btn" id="selEdit" type="button">Edit text</button><button class="btn danger" id="selDelete" type="button" data-tooltip="Delete this quote from the poster. Undo restores it.">Delete quote</button></div>
         <div class="row"><label for="selFont">Font</label><select id="selFont"></select></div>
         <div class="row"><label for="selFontSize">Font size</label><input id="selFontSize" type="number" min="0.1" max="2000" step="any" placeholder="Auto" aria-label="Quote font-size target" data-tooltip="Font-size target in poster pixels, capped to keep all text visible. Leave blank for automatic sizing. Region boundaries stay unchanged." aria-describedby="selFontSizeV"></div>
         <output class="size-readout" id="selFontSizeV"></output>
@@ -75,10 +76,9 @@
             <label class="chip"><input type="checkbox" id="selItalic"><span>Italic</span></label>
             <label class="chip"><input type="checkbox" id="selCaps"><span>Caps</span></label>
           </div></div>
-        <div class="row"><span>Text alignment</span><span class="fixed-alignment">Justified</span></div>
         <output class="hint alignment-state" id="alignmentState"></output>
         <div class="row"><span>Color</span><div class="selected-colors" id="selectedColors" role="group" aria-label="Quote color role"></div></div>
-        <div class="row r relative-row"><label for="selEmph">Relative size</label><div class="range-widget"><input id="selEmph" type="range" min="0.5" max="2.5" step="any" data-tooltip="Changes this quote's sizing priority and can move shared boundaries. It is not a literal font-size multiplier."><div class="range-ends"><span>Smaller</span><span>Bigger</span></div></div><input id="selEmphNum" type="number" min="0.5" max="2.5" step="any" aria-label="Relative size target"></div>
+        <div class="row r relative-row"><label for="selEmph">Emphasis</label><div class="range-widget"><input id="selEmph" type="range" min="0.5" max="2.5" step="any" data-tooltip="Changes this quote's sizing priority and can move shared boundaries. It is not a literal font-size multiplier."><div class="range-ends"><span>Smaller</span><span>Bigger</span></div></div><input id="selEmphNum" type="number" min="0.5" max="2.5" step="any" aria-label="Emphasis target"></div>
         <output class="size-readout" id="selEmphV"></output>
         <div class="btns">
           <button class="btn" id="selReroll" type="button" data-tooltip="Randomize this quote's font variant, case, alignment, and color role.">Reroll look</button>
@@ -92,19 +92,20 @@
     </details>
 
     <section class="sec">
-      <div class="box-heading"><h2>Poster</h2><button class="btn box-reset" id="bResetPoster" type="button" data-tooltip="Restore the poster format, spacing, and palette defaults.">Reset</button></div>
+      <div class="box-heading"><h2>Poster</h2><button class="btn box-reset" id="bResetPoster" type="button" data-tooltip="Restore the poster format, gap, and palette defaults.">Reset</button></div>
       <div class="row"><label for="aspect">Format</label>
         <select id="aspect">
           <option value="2:1">Wide 2:1</option><option value="3:2">Landscape 3:2</option>
           <option value="1:1">Square</option><option value="3:4">Portrait 3:4</option><option value="2:3">Tall 2:3</option>
         </select></div>
-      <div class="row r"><label for="gap">Spacing (poster px)</label><input id="gap" type="range" min="0" max="40" step="1" data-tooltip="Adjusts the gap between quote regions in SVG poster units, then refits text without rearranging quotes."><input id="gapNum" type="number" min="0" max="40" step="1" aria-label="Spacing in poster pixels" data-tooltip="Spacing in SVG poster units; edits refit text without rearranging quotes."></div>
+      <div class="row r"><label for="gap">Gap</label><input id="gap" type="range" min="0" max="40" step="1" data-tooltip="Adjusts the gap between quote regions in SVG poster units, then refits text without rearranging quotes."><input id="gapNum" type="number" min="0" max="40" step="1" aria-label="Gap in poster pixels" data-tooltip="Gap in SVG poster units; edits refit text without rearranging quotes."></div>
       <div class="palette-label">Palette</div>
       <div class="palette-swatches" id="paletteSwatches" role="group" aria-label="Palette choices"></div>
     </section>
 
     <section class="sec">
       <div class="box-heading"><h2>Generate</h2><button class="btn box-reset" id="bResetGenerate" type="button" data-tooltip="Restore generation preferences without changing the current poster.">Reset</button></div>
+      <p class="hint prefs-pending" id="genPrefsHint" hidden>Applies on next New layout</p>
       <div class="generate-controls">
         <div class="row r"><label for="contrast">Size variation</label><div class="range-widget"><input id="contrast" type="range" min="0" max="0.7" step="any" data-tooltip="Higher values favor larger relative text for shorter quotes; minimum does not guarantee equal sizes."><div class="range-ends"><span>Subtle</span><span>Dramatic</span></div></div><output id="contrastV"></output></div>
         <div class="row r"><label for="shaped">Shaped boundaries</label><div class="range-widget"><input id="shaped" type="range" min="0" max="1" step="any" data-tooltip="Controls how often generated internal seams use non-straight profiles, not their depth."><div class="range-ends"><span>Fewer</span><span>More</span></div></div><output id="shapedV"></output></div>
