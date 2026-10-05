@@ -2,8 +2,6 @@
 
 Create typographic quote posters from an editable collection of quotes.
 
-![A generated Quote Quilt poster](screenshot.png)
-
 ## Run
 
 Open `index.html` directly in a browser. No install or server is needed.
