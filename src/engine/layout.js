@@ -416,6 +416,13 @@ function evaluate(tr, sts, D) {
     }
   const rounds = activeRound > 0 ? countRound(tr, nodes, cells) : 0;
   const roundP = Math.max(0, Math.round(activeRound * n * 0.15) - rounds);
+  const shaped = nodes.filter(
+    ({ node, G }) => node.e && node.e.k !== "flat" && Math.abs(G.A) > 1,
+  ).length;
+  const shapeP = Math.max(
+    0,
+    Math.round(cfg.shaped * nodes.length * 0.5) - shaped,
+  );
   const score = bad
     ? Infinity
     : 40 * vr +
@@ -431,7 +438,8 @@ function evaluate(tr, sts, D) {
       20 * longSmall +
       (6 * measureP) / n +
       1.5 * same +
-      4 * roundP;
+      4 * roundP +
+      4 * shapeP;
   return { cells, nodes, score, f, rounds };
 }
 /* area fraction the first child would get if the seam passed through (px, py) */
@@ -496,13 +504,19 @@ async function search(seed, n, keep, token) {
       const shaped = clone(flat);
       if (cfg.shaped > 0) decorateSeams(shaped, rng);
       if (cfg.round > 0) roundSome(shaped, rng, sts, D);
-      const shapedRes = evaluate(shaped, sts, D);
-      if (
-        Number.isFinite(shapedRes.score) &&
-        shapedRes.score <= flatRes.score * 1.12
-      ) {
-        t = shaped;
-        res = shapedRes;
+      const seams = [];
+      collect(shaped, seams, []);
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const shapedRes = evaluate(shaped, sts, D);
+        if (
+          Number.isFinite(shapedRes.score) &&
+          shapedRes.score <= flatRes.score * 1.12
+        ) {
+          t = shaped;
+          res = shapedRes;
+          break;
+        }
+        for (const node of seams) node.e.a *= 0.65;
       }
     }
     out.push({ score: res.score, tree: t, sts, res });
