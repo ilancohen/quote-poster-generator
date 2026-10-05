@@ -172,7 +172,9 @@ const SYS = [
 ];
 /** @type {Record<string, FontDef>} */
 const FONTMAP = {};
-FONTS.concat(SYS).forEach((f) => (FONTMAP[f.n] = f));
+FONTS.concat(SYS).forEach((f) => {
+  FONTMAP[f.n] = f;
+});
 const FB = {
   serif: "Georgia, serif",
   sans: "Arial, Helvetica, sans-serif",
@@ -327,7 +329,9 @@ function pickRollFonts(rng) {
   if (!pool.length) return SYS.slice(0, 3);
   /** @type {Record<FontCategory, FontDef[]>} */
   const byCat = { serif: [], sans: [], display: [], script: [], mono: [] };
-  pool.forEach((f) => byCat[f.c].push(f));
+  pool.forEach((f) => {
+    byCat[f.c].push(f);
+  });
   /** @param {FontCategory} cat @returns {FontDef|null} */
   const pick = (cat) => {
     const list = byCat[cat];

@@ -1,0 +1,9 @@
+node_modules/
+.git/
+.vite/
+.agents/
+docs/plans/
+package-lock.json
+wall.txt
+wall-final.png
+screenshot.png
