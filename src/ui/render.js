@@ -23,9 +23,8 @@ let editingQuoteId = null;
 /** @type {string|null} generation prefs last applied by New layout / regenerate */
 let appliedGenPrefs = null;
 
-// Starter set (18 quotes, mixed lengths): shorts → medium → long texture.
+// Starter set (10 quotes, mixed lengths): shorts → medium → long texture.
 const STARTER_TEXT_PREFIXES = [
-  "Not all those who wander are lost.",
   "To be great is to be misunderstood.",
   "The mass of men lead lives of quiet desperation.",
   "Nothing great was ever achieved without enthusiasm.",
@@ -33,16 +32,9 @@ const STARTER_TEXT_PREFIXES = [
   "Be ashamed to die until you have won some victory for humanity.",
   "What is this life if, full of care,",
   "To live is the rarest thing in the world. Most people exist, that is all.",
-  "In the beginning, the universe was created. This has made a lot of people very angry",
   "Do I contradict myself?",
   "Shall we make a new rule of life from tonight: always to try to be a little kinder",
-  '"To know someone with whom you can feel there is understanding',
   "We are such stuff as dreams are made on, and our little life is rounded with a sleep.",
-  "Laughter and tears are both responses to frustration and exhaustion.",
-  "Hello, babies. Welcome to Earth.",
-  '"I beg you to have patience with everything unresolved',
-  "The people for me are the mad ones",
-  "Here’s to the crazy ones. The misfits.",
 ];
 
 function formatQuoteBlock(quote) {
