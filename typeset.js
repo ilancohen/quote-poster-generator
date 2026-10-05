@@ -297,5 +297,9 @@ function fitShape(qi, region, m, align, gap){
   Object.assign(c, {bad:0, s, K, P:pl.P, off:pl.off, top:pl.top, lines:ch.lines, aw:T.aw, a:T.hasA ? s * AUTHOR_SCALE : 0,
     leftover:ch.leftover});
   cellStats(c);
+  // Tapered cells with ugly glue look better ragged than rivered
+  if (align === 'justify' && !rect && (c.maxF > 1.55 || c.badJ > 2.2 || (c.K > 2 && c.wpl < 2.4))) {
+    return fitShape(qi, region, m, 'left', gap);
+  }
   return c;
 }

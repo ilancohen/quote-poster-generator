@@ -119,6 +119,13 @@
         <div class="row r"><label for="color">Approx. accent share</label><div class="range-widget"><input id="color" type="range" min="0" max="0.8" step="any" data-tooltip="Approximate target share of quotes assigned accent color roles."><div class="range-ends"><span>None</span><span>Frequent</span></div></div><output id="colorV"></output></div>
         <div class="accent-swatches" id="accentSwatches" aria-label="Accent colors in the current palette"></div>
         <div class="row r"><label for="symmetry">Symmetry preference</label><div class="range-widget"><input id="symmetry" type="range" min="0" max="1" step="any" data-tooltip="Favors centered seam profiles when generating or reshaping boundaries."><div class="range-ends"><span>Freeform</span><span>Symmetrical</span></div></div><output id="symmetryV"></output></div>
+        <div class="row"><span>Mood presets</span>
+          <div class="chips mood-presets" id="moodPresets" role="group" aria-label="Mood presets">
+            <button type="button" class="chip-btn" data-preset="literary" data-tooltip="Serif and display families.">Literary</button>
+            <button type="button" class="chip-btn" data-preset="clean" data-tooltip="Serif and sans only.">Clean</button>
+            <button type="button" class="chip-btn" data-preset="full" data-tooltip="All typeface categories.">Full</button>
+          </div>
+        </div>
         <div class="row"><span>Typeface categories</span>
         <div class="chips" id="moods">
           <label class="chip" data-tooltip="Include serif families in the random font pool."><input type="checkbox" data-mood="serif"><span style="font-family:Georgia,serif">Serif</span></label>

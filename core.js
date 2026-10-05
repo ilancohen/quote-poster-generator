@@ -37,6 +37,7 @@
  * @property {HTMLButtonElement} bResetGenerate
  * @property {HTMLButtonElement} bResetSelected
  * @property {HTMLDivElement} moods
+ * @property {HTMLDivElement} moodPresets
  * @property {HTMLSelectElement} effort
  * @property {HTMLInputElement} seed
  * @property {HTMLParagraphElement} selHint
@@ -165,9 +166,14 @@ const PALS = {
 };
 
 /* ---------- state ---------- */
-const cfg = {aspect:'2:1', gap:14, contrast:0.3, color:0.3, pal:'ink',
-  moods:{serif:1, sans:1, display:1, script:1, mono:1}, effort:'std', seed:7, shaped:0.45, round:0.3, symmetry:0.75};
+const cfg = {aspect:'2:1', gap:20, contrast:0.3, color:0.3, pal:'ink',
+  moods:{serif:1, sans:1, display:1, script:0, mono:0}, effort:'std', seed:7, shaped:0.45, round:0.3, symmetry:0.75};
 const DEFAULT_CFG = clone(cfg);
+const MOOD_PRESETS = {
+  literary:{serif:1, sans:0, display:1, script:0, mono:0},
+  clean:{serif:1, sans:1, display:0, script:0, mono:0},
+  full:{serif:1, sans:1, display:1, script:1, mono:1}
+};
 let activeContrast = cfg.contrast, activeRound = cfg.round;
 /** @type {Quote[]} */
 let qs = [];            // quotes: {id,text,tokens,author,chars,emph,st}
@@ -186,7 +192,7 @@ function dims(){
   const [a, b] = cfg.aspect.split(':').map(Number);
   const W = a >= b ? 2000 : Math.round(2000 * a / b);
   const H = a >= b ? Math.round(2000 * b / a) : 2000;
-  return {W, H, m:30, gap:cfg.gap};
+  return {W, H, m:36, gap:cfg.gap};
 }
 function activePool(){
   const available = FONTS.filter(f => avail.has(f.n));
@@ -229,17 +235,71 @@ function parseQuotes(txt){
 }
 
 /* ---------- styles ---------- */
-/** @param {()=>number} rng @param {Quote} [q] @returns {Style} */
-function randStyle(rng, q){
+/** @param {()=>number} rng @returns {FontDef[]} */
+function pickRollFonts(rng){
   const pool = activePool();
-  const f = pool[(rng() * pool.length) | 0];
+  if (!pool.length) return SYS.slice(0, 3);
+  /** @type {Record<FontCategory, FontDef[]>} */
+  const byCat = {serif:[], sans:[], display:[], script:[], mono:[]};
+  pool.forEach(f => byCat[f.c].push(f));
+  /** @param {FontCategory} cat @returns {FontDef|null} */
+  const pick = cat => {
+    const list = byCat[cat];
+    return list.length ? list[(rng() * list.length) | 0] : null;
+  };
+  /** @type {FontDef[]} */
+  const chosen = [];
+  const push = f => { if (f && !chosen.some(c => c.n === f.n) && chosen.length < 4) chosen.push(f); };
+  push(pick('serif')); push(pick('sans'));
+  push(pick('display') || pick('mono'));
+  for (const cat of /** @type {FontCategory[]} */ (['serif', 'sans', 'display', 'mono'])) {
+    if (chosen.length >= 3) break;
+    push(pick(cat));
+  }
+  if (cfg.moods.script && rng() < 0.18) push(pick('script'));
+  return chosen.length ? chosen : pool.slice(0, Math.min(3, pool.length));
+}
+/** @param {FontDef} f @param {()=>number} rng @returns {Style} */
+function styleFromFont(f, rng){
   const bold = rng() < 0.3 && f.w.length > 1;
   const wi = bold ? f.w.length - 1 - ((rng() < 0.4 && f.w.length > 2) ? 1 : 0) : regIndex(f);
   const italic = (f.i && rng() < 0.22) ? 1 : 0;
   const caps = f.caps ? 1 : (rng() < 0.14 ? 1 : 0);
-  const cr = rng();
-  const color = cr < cfg.color * 0.5 ? 1 : (cr < cfg.color ? 2 : 0);
-  return {font:f.n, wi, italic, caps, color, lock:0, jit:0.82 + rng() * 0.4};
+  return {font:f.n, wi, italic, caps, color:0, lock:0, jit:0.82 + rng() * 0.4};
+}
+/** @param {Style[]} styles @param {()=>number} rng */
+function composeAccents(styles, rng){
+  styles.forEach(st => { st.color = 0; });
+  if (cfg.color <= 0 || !qs.length) return;
+  const maxN = Math.min(3, Math.max(1, Math.round(cfg.color * 3.2)));
+  const order = qs.map((q, i) => i).sort((a, b) => qs[a].chars - qs[b].chars || a - b);
+  styles[order[0]].color = rng() < 0.5 ? 1 : 2;
+  let left = maxN - 1;
+  for (let k = 1; k < order.length && left > 0; k++) {
+    if (rng() > Math.min(0.85, 0.25 + cfg.color)) continue;
+    styles[order[k]].color = rng() < 0.55 ? 1 : 2;
+    left--;
+  }
+}
+/** @param {()=>number} rng @returns {Style[]} */
+function composeStyles(rng){
+  const fonts = pickRollFonts(rng);
+  const styles = qs.map(() => {
+    let f = fonts[(rng() * fonts.length) | 0];
+    if (f.c === 'script' && rng() > 0.28) f = fonts.find(x => x.c !== 'script') || f;
+    return styleFromFont(f, rng);
+  });
+  composeAccents(styles, rng);
+  return styles;
+}
+/** @param {()=>number} rng @param {Quote} [q] @returns {Style} */
+function randStyle(rng, q){
+  const pool = activePool();
+  let f = pool[(rng() * pool.length) | 0];
+  if (f.c === 'script' && rng() > 0.3) f = pool.find(x => x.c !== 'script') || f;
+  const st = styleFromFont(f, rng);
+  if (q && cfg.color > 0 && rng() < cfg.color * 0.35) st.color = rng() < 0.5 ? 1 : 2;
+  return st;
 }
 
 /* ---------- measuring ---------- */

@@ -291,7 +291,7 @@ async function search(seed, n, keep, token){
   const rng = mulberry32(seed >>> 0), D = dims();
   const out = [];
   for (let i = 0; i < n; i++) {
-    const sts = qs.map(q => randStyle(rng, q));
+    const sts = composeStyles(rng);
     const {wts} = weightsOf(sts);
     const order = seedOrder(sts, rng);
     const flat = buildTree(order, wts, rng, D.W - 2 * D.m, D.H - 2 * D.m, {n:0}, sts, {flat:true});

@@ -152,7 +152,7 @@ function posterInner(res, stl, pal, D){
         t += `<text y="${by.toFixed(2)}"${lsAttr}>${ts}</text>`;
       }
       if (ln.author) {
-        au = `<text x="${(ln.x0 + ln.W).toFixed(2)}" y="${by.toFixed(2)}" text-anchor="end" font-family="${ffam(m.f)}" font-size="${c.a}" font-style="${m.f.i ? 'italic' : 'normal'}" font-weight="400" fill="${col}" fill-opacity="0.7">${esc(q.author)}</text>`;
+        au = `<text x="${(ln.x0 + ln.W).toFixed(2)}" y="${by.toFixed(2)}" text-anchor="end" font-family="${ffam(m.f)}" font-size="${c.a}" font-style="italic" font-weight="400" fill="${pal.ink}" fill-opacity="0.55">${esc(q.author)}</text>`;
       }
     });
     o += `<g ${attrs}>${t}</g>${au}`;
@@ -612,7 +612,7 @@ $('quoteEditor').addEventListener('submit', event => {
     qs[index] = {...q, st:previous.st, emph:previous.emph, fontSize:previous.fontSize};
     sel = index;
   } else {
-    q.st = randStyle(mulberry32(cfg.seed + qs.length));
+    q.st = randStyle(mulberry32(cfg.seed + qs.length), q);
     const newIndex = qs.length;
     const largest = curRes?.cells.filter(cell => cell.box).sort((first, second) => second.box.w * second.box.h - first.box.w * first.box.h)[0];
     const target = largest ? largest.q : 0;
@@ -694,6 +694,11 @@ function syncControls(){
   });
   renderPaletteSwatches();
   renderAccentSwatches();
+  document.querySelectorAll('#moodPresets [data-preset]').forEach(button => {
+    const key = /** @type {HTMLElement} */ (button).dataset.preset;
+    const preset = key && MOOD_PRESETS[key];
+    button.classList.toggle('active', !!preset && Object.keys(preset).every(mood => !!cfg.moods[mood] === !!preset[mood]));
+  });
 }
 function strength(value, labels){ return labels[Math.min(labels.length - 1, Math.round(value * (labels.length - 1)))]; }
 function finishPreference(key, step, min, max){
@@ -888,7 +893,7 @@ $('bApply').addEventListener('click', async () => {
   const token = ++runToken;
   setQuotes(text, false);
   const pool = mulberry32(cfg.seed);
-  qs.forEach(q => { if (!q.st) q.st = randStyle(pool); });
+  qs.forEach(q => { if (!q.st) q.st = randStyle(pool, q); });
   saveLocal();
   setBusy(true, 'Loading typefaces…');
   await loadFonts();
@@ -897,10 +902,15 @@ $('bApply').addEventListener('click', async () => {
 });
 
 $('aspect').addEventListener('change', async e => {
-  cfg.aspect = selectFromEvent(e).value;
+  const next = selectFromEvent(e).value;
+  if (busy) {
+    $('aspect').value = cfg.aspect;
+    say('Wait for the current search to finish before changing format.');
+    return;
+  }
+  cfg.aspect = next;
   saveLocal();
   if (!qs.length) { render(); commit(); return; }
-  if (busy) { say('Wait for the current search to finish before changing format.'); return; }
   say('Format changed — packing a new layout…');
   await regenerate();
 });
@@ -935,8 +945,18 @@ moodInputs.forEach(i => i.addEventListener('change', () => {
   if (mood) cfg.moods[mood] = i.checked ? 1 : 0;
   const active = Object.values(cfg.moods).some(Boolean);
   if (!active) { i.checked = true; if (mood) cfg.moods[mood] = 1; say('Choose at least one typeface category.'); return; }
-  saveLocal(); updateGenPrefsHint(); commit();
+  saveLocal(); syncControls(); updateGenPrefsHint(); commit();
 }));
+$('moodPresets').addEventListener('click', e => {
+  const button = e.target instanceof Element ? e.target.closest('[data-preset]') : null;
+  if (!button) return;
+  const key = /** @type {HTMLElement} */ (button).dataset.preset;
+  const preset = key && MOOD_PRESETS[key];
+  if (!preset) return;
+  cfg.moods = {...preset};
+  saveLocal(); syncControls(); updateGenPrefsHint(); commit();
+  say(`Mood preset: ${key}. Applies on next New layout.`);
+});
 
 $('selFont').addEventListener('change', e => editSel(st => {
   const previous = FONTMAP[st.font], weight = previous && previous.w[st.wi] || 400, italic = st.italic;
@@ -977,7 +997,7 @@ $('selEmph').addEventListener('input', e => updateEmph(inputFromEvent(e).value))
 $('selEmphNum').addEventListener('input', e => updateEmph(inputFromEvent(e).value));
 $('selEmph').addEventListener('change', () => { previewingEmph = false; render(); commit(); });
 $('selEmphNum').addEventListener('change', () => { previewingEmph = false; render(); commit(); });
-$('selReroll').addEventListener('click', () => { if (sel < 0) return; qs[sel].st = randStyle(Math.random); render(); updateSel(); commit(); });
+$('selReroll').addEventListener('click', () => { if (sel < 0) return; qs[sel].st = randStyle(Math.random, qs[sel]); render(); updateSel(); commit(); });
 $('selRound').addEventListener('click', () => {
   if (sel < 0 || !tree) return;
   if ($('selRound').getAttribute('aria-disabled') === 'true') { say($('selRound').dataset.tooltip); return; }
@@ -1174,7 +1194,7 @@ async function boot(){
   syncControls();
   setQuotes($('quotesText').value, true);
   const rng = mulberry32(cfg.seed);
-  qs.forEach(q => { q.st = randStyle(rng); });
+  qs.forEach(q => { q.st = randStyle(rng, q); });
   if (!qs.length) { render(); updateSel(); commit(); return; }
   await regenerate({n:80});
   say('Loading typefaces…');
