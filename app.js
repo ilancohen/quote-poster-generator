@@ -195,7 +195,7 @@ function overlayInner(res, activeTree = tree){
 }
 function render(){
   const empty = !qs.length;
-  [$('bReroll'), $('bRefine'), $('bSeed'), $('bCopy'), $('bDownloadSVG')].forEach(button => { button.disabled = empty; });
+  [$('bReroll'), $('bRefine'), $('bSeed'), $('bCopy'), $('bDownloadSVG'), $('bDownloadPNG')].forEach(button => { button.disabled = empty; });
   if (!tree || empty) {
     curRes = null;
     stage.innerHTML = '<rect width="2000" height="1000" fill="white"/><text x="1000" y="510" text-anchor="middle" font-family="Georgia, serif" font-size="44" fill="#777777">No quotes yet</text>';
@@ -456,6 +456,7 @@ function updateSel(){
   $('stage').setAttribute('aria-label', q ? `Selected quote: ${q.text}` : 'Quote poster. Use arrow keys to move focus between quotes, then Enter to select.');
   if (!q) {
     swapMode = false; swapDestination = -1; $('selSwap').textContent = 'Swap with…';
+    $('swapHint').hidden = true;
     return;
   }
   const st = q.st, f = FONTMAP[st.font] || FONTS[0];
@@ -486,6 +487,14 @@ function updateSel(){
   $('selRound').dataset.tooltip = roundUnavailable ? 'Unavailable: this quote has no supported side seam to round.' : 'Rounds eligible shared side boundaries; neighboring quotes can be affected.';
   $('selShape').dataset.tooltip = edgesUnavailable ? 'Unavailable: this quote has no editable internal boundary.' : 'Choose new profiles for this quote\'s nearest shared boundaries.';
   $('selFlat').dataset.tooltip = edgesUnavailable ? 'Unavailable: this quote has no editable internal boundary.' : 'Straighten this quote\'s nearest shared boundaries.';
+  const narrow = window.matchMedia('(max-width: 900px)').matches;
+  $('swapHint').hidden = !narrow;
+  $('swapHint').textContent = swapMode
+    ? (swapDestination >= 0 ? 'Tap Swap again to confirm, or tap another quote.' : 'Tap another quote as the destination, then confirm.')
+    : 'Tap Swap, then tap another quote to choose a destination.';
+  $('selSwap').dataset.tooltip = narrow
+    ? 'Tap to start a swap, tap a destination quote, then confirm. Drag-swap is desktop-only.'
+    : 'Select a destination quote, then confirm the swap.';
 }
 const paletteNames = {ink:'Ink on white', riso:'Blue riso', night:'Night', mono:'Newsprint', garden:'Garden', pool:'Poolside', rose:'Rose', marigold:'Marigold'};
 function renderPaletteSwatches(){
@@ -511,7 +520,8 @@ function pickCell(i){
   if (swapMode && sel >= 0) {
     swapDestination = i === sel ? -1 : i;
     $('selSwap').textContent = swapDestination >= 0 ? 'Confirm swap' : 'Choose destination';
-    render(); say(swapDestination >= 0 ? 'Confirm the selected destination to swap.' : 'Choose another quote as the destination.');
+    render(); updateSel();
+    say(swapDestination >= 0 ? 'Confirm the selected destination to swap.' : 'Choose another quote as the destination.');
     return;
   }
   sel = sel === i ? -1 : i; focusQ = i; render(); updateSel();
@@ -746,6 +756,40 @@ async function downloadSVG(){
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   say(result.external ? `SVG downloaded with ${result.embedded} embedded font faces; ${result.external} still use online fallback.` : `SVG downloaded with ${result.embedded} embedded font faces.`);
 }
+async function downloadPNG(){
+  if (!tree || !qs.length) { say('Add quotes before exporting a PNG.'); return; }
+  say('Preparing PNG…');
+  try {
+    const result = await exportSVG();
+    const D = dims();
+    const blob = new Blob([result.svg], {type:'image/svg+xml;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('Could not rasterize the poster SVG in this browser.'));
+      img.src = url;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = D.W;
+    canvas.height = D.H;
+    const c = canvas.getContext('2d');
+    if (!c) throw new Error('Could not create a canvas for PNG export.');
+    c.fillStyle = PALS[cfg.pal].paper;
+    c.fillRect(0, 0, D.W, D.H);
+    c.drawImage(img, 0, 0, D.W, D.H);
+    URL.revokeObjectURL(url);
+    const pngUrl = canvas.toDataURL('image/png');
+    if (!pngUrl || pngUrl === 'data:,') throw new Error('PNG export was blocked in this browser.');
+    const link = document.createElement('a');
+    link.href = pngUrl;
+    link.download = 'quote-quilt.png';
+    link.click();
+    say(result.external ? `PNG downloaded; ${result.external} font faces may use fallbacks.` : 'PNG downloaded.');
+  } catch (error) {
+    say(error instanceof Error ? error.message : 'PNG export failed in this browser.');
+  }
+}
 function swapQuotes(source, destination){
   if (!tree || source === destination) return false;
   const leaves = []; collect(tree, [], leaves);
@@ -821,6 +865,7 @@ $('bCopy').addEventListener('click', async () => {
   if (result.external) say(`SVG copied with ${result.embedded} embedded font faces; ${result.external} still use online fallback.`);
 });
 $('bDownloadSVG').addEventListener('click', downloadSVG);
+$('bDownloadPNG').addEventListener('click', downloadPNG);
 $('bCopyJson').addEventListener('click', () => copyText(toJSON(), 'Settings'));
 $('bLoadJson').addEventListener('click', () => {
   if (!$('io').value.trim()) {
@@ -955,7 +1000,11 @@ $('selSwap').addEventListener('click', () => {
   }
   swapMode = !swapMode; swapDestination = -1;
   $('selSwap').textContent = swapMode ? 'Choose destination' : 'Swap with…';
-  say(swapMode ? 'Select a destination quote, then confirm.' : 'Swap canceled.'); render();
+  const narrow = window.matchMedia('(max-width: 900px)').matches;
+  say(swapMode
+    ? (narrow ? 'Tap a destination quote, then confirm Swap.' : 'Select a destination quote, then confirm.')
+    : 'Swap canceled.');
+  render(); updateSel();
 });
 function bindGeometryPreview(button, action){
   button.addEventListener('pointerenter', () => { geometryPreview = action; render(); });

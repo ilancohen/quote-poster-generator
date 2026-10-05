@@ -8,8 +8,10 @@
  * @property {HTMLButtonElement} bRedo
  * @property {HTMLButtonElement} bCopy
  * @property {HTMLButtonElement} bDownloadSVG
+ * @property {HTMLButtonElement} bDownloadPNG
  * @property {HTMLButtonElement} bSeed
  * @property {HTMLButtonElement} bCancel
+ * @property {HTMLParagraphElement} swapHint
  * @property {HTMLInputElement} gapNum
  * @property {HTMLElement} progBar
  * @property {HTMLParagraphElement} status

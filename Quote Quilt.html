@@ -23,14 +23,20 @@
       </svg>
     </section>
     <div class="bar">
-      <button class="btn primary" id="bReroll" type="button" data-tooltip="Generate a new arrangement using the current generation preferences.">New layout</button>
-      <button class="btn" id="bRefine" type="button" data-tooltip="Adjust seam positions in the current arrangement without swapping or restyling quotes.">Refine spacing</button>
-      <button class="btn icon" id="bUndo" type="button" aria-label="Undo" data-tooltip="Undo the last poster or settings change." disabled>↶</button>
-      <button class="btn icon" id="bRedo" type="button" aria-label="Redo" data-tooltip="Redo the last undone change." disabled>↷</button>
-      <button class="btn" id="bCopy" type="button">Copy SVG</button>
-      <button class="btn" id="bDownloadSVG" type="button">Download SVG</button>
-      <button class="btn" id="bCopyJson" type="button">Copy settings</button>
-      <button class="btn" id="bLoadJson" type="button">Load settings</button>
+      <div class="bar-group" role="group" aria-label="Layout">
+        <button class="btn primary" id="bReroll" type="button" data-tooltip="Generate a new arrangement using the current generation preferences.">New layout</button>
+        <button class="btn" id="bRefine" type="button" data-tooltip="Adjust seam positions in the current arrangement without swapping or restyling quotes.">Refine spacing</button>
+        <button class="btn" id="bSeed" type="button" data-tooltip="Generate a new poster using the seed above and current generation preferences.">Generate with seed</button>
+      </div>
+      <div class="bar-group" role="group" aria-label="History">
+        <button class="btn icon" id="bUndo" type="button" aria-label="Undo" data-tooltip="Undo the last poster or settings change." disabled>↶</button>
+        <button class="btn icon" id="bRedo" type="button" aria-label="Redo" data-tooltip="Redo the last undone change." disabled>↷</button>
+      </div>
+      <div class="bar-group" role="group" aria-label="Export">
+        <button class="btn" id="bCopy" type="button">Copy SVG</button>
+        <button class="btn" id="bDownloadSVG" type="button">Download SVG</button>
+        <button class="btn" id="bDownloadPNG" type="button">Download PNG</button>
+      </div>
       <button class="btn" id="bCancel" type="button" hidden>Cancel</button>
     </div>
     <div class="prog" aria-hidden="true"><i id="progBar"></i></div>
@@ -80,13 +86,14 @@
         <div class="row"><span>Color</span><div class="selected-colors" id="selectedColors" role="group" aria-label="Quote color role"></div></div>
         <div class="row r relative-row"><label for="selEmph">Emphasis</label><div class="range-widget"><input id="selEmph" type="range" min="0.5" max="2.5" step="any" data-tooltip="Changes this quote's sizing priority and can move shared boundaries. It is not a literal font-size multiplier."><div class="range-ends"><span>Smaller</span><span>Bigger</span></div></div><input id="selEmphNum" type="number" min="0.5" max="2.5" step="any" aria-label="Emphasis target"></div>
         <output class="size-readout" id="selEmphV"></output>
-        <div class="btns">
+        <div class="btns geometry-actions">
           <button class="btn" id="selReroll" type="button" data-tooltip="Randomize this quote's font variant, case, alignment, and color role.">Reroll look</button>
           <button class="btn" id="selRound" type="button" data-tooltip="Rounds eligible shared side boundaries; neighboring quotes can be affected.">Round sides</button>
           <button class="btn" id="selShape" type="button" data-tooltip="Choose new profiles for this quote's nearest shared boundaries.">Reshape boundaries</button>
           <button class="btn" id="selFlat" type="button" data-tooltip="Straighten this quote's nearest shared boundaries.">Straighten boundaries</button>
           <button class="btn" id="selSwap" type="button" data-tooltip="Select a destination quote, then confirm the swap.">Swap with…</button>
         </div>
+        <p class="hint swap-hint" id="swapHint" hidden>Tap Swap, then tap another quote to choose a destination.</p>
         <p class="hint edge-state" id="edgeState" aria-live="polite"></p>
       </div>
     </details>
@@ -124,8 +131,7 @@
           <div class="row r"><label for="round">Rounded forms</label><div class="range-widget"><input id="round" type="range" min="0" max="1" step="any" data-tooltip="Controls attempts to round eligible pieces; high values do not round every piece."><div class="range-ends"><span>None</span><span>More</span></div></div><output id="roundV"></output></div>
             <div class="row"><label for="effort">Search effort</label>
             <select id="effort" data-tooltip="Controls how many candidate layouts are evaluated, trading speed for search depth."><option value="fast">Quick</option><option value="std">Standard</option><option value="deep">Thorough</option></select></div>
-          <div class="row"><label for="seed">Seed</label><input id="seed" type="number" min="1" max="999999" step="1" data-tooltip="Reproduces a layout only with the same quotes, settings, styles, fonts, and engine version."></div>
-          <button class="btn" id="bSeed" type="button" data-tooltip="Generate a new poster using the seed above and current generation preferences.">Generate with seed</button>
+          <div class="row"><label for="seed">Seed</label><input id="seed" type="number" min="1" max="999999" step="1" data-tooltip="Reproduces a layout only with the same quotes, settings, styles, fonts, and engine version. Use Generate with seed in the Layout bar."></div>
         </details>
       </div>
     </section>
@@ -135,6 +141,8 @@
         <summary>Save / load</summary>
         <textarea id="io" rows="5" spellcheck="false" aria-label="Settings JSON"></textarea>
         <div class="btns">
+          <button class="btn" id="bCopyJson" type="button">Copy settings</button>
+          <button class="btn" id="bLoadJson" type="button">Load settings</button>
           <button class="btn" id="bClearJSON" type="button">Clear JSON</button>
         </div>
       </details>
