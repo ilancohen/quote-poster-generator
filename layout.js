@@ -29,14 +29,48 @@ function tweakSeam(e, rng){
 }
 /* box proportions (w/h) a quote can fill with lines between 10 and 45 ems (or the whole quote, if shorter);
    10 ems sits between the typesetter's justified and ragged minimum measures */
-/** @param {number} i @returns {[number, number]} */
-function aspRange(i){
-  const q = qs[i], em = 0.5 * q.chars + (q.author ? 0.21 * q.author.length + 0.4 : 0), lh = 1.2;
+/** @param {number} i @param {Style} [st] @returns {number} */
+function quoteNatEm(i, st){
+  const q = qs[i], style = st || q.st;
+  if (!style) return 0.5 * q.chars + (q.author ? 0.21 * q.author.length + 0.4 : 0);
+  return streamOf(q, getMetrics(q, style)).natEm;
+}
+/** @param {number} i @param {Style} [st] @returns {[number, number]} */
+function aspRange(i, st){
+  const style = st || qs[i].st;
+  const em = Math.max(1, quoteNatEm(i, style));
+  const font = style ? (FONTMAP[style.font] || FONTS[0]) : FONTS[0];
+  const lh = LH[font.c] || 1.2;
   return [Math.min(em, 10) ** 2 / (lh * em), Math.min(em, 45) ** 2 / (lh * em)];
 }
 const GROUP_RANGE = /** @type {[number, number]} */ ([0.5, 2]);
 const offRange = (a, [lo, hi]) => Math.max(0, Math.log(lo / a), Math.log(a / hi));
-function buildTree(order, wts, rng, w, h, ctr){
+/** @param {Style[]} sts @param {()=>number} rng @returns {number[]} */
+function seedOrder(sts, rng){
+  const order = shuffle(qs.map((_, k) => k), rng);
+  // Bias long quotes earlier so root splits can give them wide branches
+  if (rng() < 0.6) {
+    order.sort((a, b) => quoteNatEm(b, sts[b]) - quoteNatEm(a, sts[a]));
+    const third = Math.max(1, (order.length / 3) | 0);
+    for (let block = 0; block < order.length; block += third) {
+      const chunk = order.slice(block, block + third);
+      shuffle(chunk, rng);
+      for (let i = 0; i < chunk.length; i++) order[block + i] = chunk[i];
+    }
+  }
+  return order;
+}
+/**
+ * @param {number[]} order
+ * @param {number[]} wts
+ * @param {()=>number} rng
+ * @param {number} w
+ * @param {number} h
+ * @param {{n:number}} ctr
+ * @param {Style[]} sts
+ * @param {{flat?:boolean}} [opts]
+ */
+function buildTree(order, wts, rng, w, h, ctr, sts, opts = {}){
   if (order.length === 1) return {q:order[0], id:ctr.n++};
   const tot = order.reduce((s, i) => s + wts[i], 0), target = 0.3 + rng() * 0.4;
   let k = 1, acc = 0, bestD = Infinity;
@@ -45,15 +79,44 @@ function buildTree(order, wts, rng, w, h, ctr){
     const dd = Math.abs(acc / tot - target);
     if (dd < bestD) { bestD = dd; k = j; }
   }
-  const A = order.slice(0, k), B = order.slice(k);
+  // Prefer splits that keep long quotes in the wider child
+  let A = order.slice(0, k), B = order.slice(k);
+  const scoreSplit = (left, right) => {
+    const r = left.reduce((s, i) => s + wts[i], 0) / tot;
+    const fit = (set, cw, ch) => {
+      if (set.length !== 1) return offRange(cw / ch, GROUP_RANGE);
+      return offRange(cw / ch, aspRange(set[0], sts[set[0]]));
+    };
+    return Math.max(fit(left, w * r, h), fit(right, w * (1 - r), h))
+      + Math.max(fit(left, w, h * r), fit(right, w, h * (1 - r)));
+  };
+  if (scoreSplit(B, A) + 1e-6 < scoreSplit(A, B)) { const t = A; A = B; B = t; }
+  // One local swap of a long leaf across the cut if it improves aspect fit
+  if (A.length && B.length) {
+    const longA = A.reduce((best, i) => quoteNatEm(i, sts[i]) > quoteNatEm(best, sts[best]) ? i : best, A[0]);
+    const longB = B.reduce((best, i) => quoteNatEm(i, sts[i]) > quoteNatEm(best, sts[best]) ? i : best, B[0]);
+    /** @type {{from:number[],to:number[],qi:number}[]} */
+    const trials = [{from:A, to:B, qi:longA}, {from:B, to:A, qi:longB}];
+    for (const trial of trials) {
+      if (trial.from.length < 2) continue;
+      const nextFrom = trial.from.filter(i => i !== trial.qi), nextTo = trial.to.concat(trial.qi);
+      if (scoreSplit(nextFrom, nextTo) + 0.02 < scoreSplit(A, B)) { A = nextFrom; B = nextTo; break; }
+    }
+  }
   const r = A.reduce((s, i) => s + wts[i], 0) / tot;
-  // cut the way that keeps each child within the proportions it can fill
-  const fit = (set, cw, ch) => offRange(cw / ch, set.length === 1 ? aspRange(set[0]) : GROUP_RANGE);
+  const fit = (set, cw, ch) => offRange(cw / ch, set.length === 1 ? aspRange(set[0], sts[set[0]]) : GROUP_RANGE);
   const bx = Math.max(fit(A, w * r, h), fit(B, w * (1 - r), h)), by = Math.max(fit(A, w, h * r), fit(B, w, h * (1 - r)));
   const d = (rng() < 0.85) === (bx <= by) ? 'x' : 'y';
-  const a = d === 'x' ? buildTree(A, wts, rng, w * r, h, ctr) : buildTree(A, wts, rng, w, h * r, ctr);
-  const b = d === 'x' ? buildTree(B, wts, rng, w * (1 - r), h, ctr) : buildTree(B, wts, rng, w, h * (1 - r), ctr);
-  return {d, a, b, s:0, e:randomSeam(rng, d, false, cfg.symmetry)};
+  const a = d === 'x' ? buildTree(A, wts, rng, w * r, h, ctr, sts, opts) : buildTree(A, wts, rng, w, h * r, ctr, sts, opts);
+  const b = d === 'x' ? buildTree(B, wts, rng, w * (1 - r), h, ctr, sts, opts) : buildTree(B, wts, rng, w, h * (1 - r), ctr, sts, opts);
+  return {d, a, b, s:0, e:opts.flat ? {...FLAT} : randomSeam(rng, d, false, cfg.symmetry)};
+}
+/** @param {TreeNode} tr @param {()=>number} rng */
+function decorateSeams(tr, rng){
+  if (Object.hasOwn(tr, 'q')) return;
+  const node = /** @type {{d:'x'|'y',a:TreeNode,b:TreeNode,s:number,e?:Seam}} */ (tr);
+  if (!node.e || node.e.k === 'flat') node.e = randomSeam(rng, node.d, false, cfg.symmetry);
+  decorateSeams(node.a, rng); decorateSeams(node.b, rng);
 }
 function calcW(n, wts){ return n.q !== undefined ? (n._w = wts[n.q]) : (n._w = calcW(n.a, wts) + calcW(n.b, wts)); }
 function collect(n, I, L){ if (n.q !== undefined) { L.push(n); return; } I.push(n); collect(n.a, I, L); collect(n.b, I, L); }
@@ -160,15 +223,24 @@ function evaluate(tr, sts, D){
   // each piece much smaller than its share costs on its own, so one tiny quote can't hide in an average
   const under = lr.reduce((a, v) => a + Math.max(0, mu - v - 0.25) ** 2, 0);
   const sFloor = D.W * 0.009;
-  let left = 0, asp = 0, jb = 0, rag = 0, lastP = 0, wplP = 0, bad = 0, small = 0, same = 0;
+  let left = 0, asp = 0, jb = 0, rag = 0, lastP = 0, wplP = 0, bad = 0, small = 0, same = 0, longSmall = 0, measureP = 0;
   for (const c of cells) {
     left += c.leftover ** 2;
-    if (c.box.h > 0 && c.box.w > 0) asp += offRange(c.box.w / c.box.h, aspRange(c.q)) ** 2;
+    if (c.box.h > 0 && c.box.w > 0) asp += offRange(c.box.w / c.box.h, aspRange(c.q, sts[c.q])) ** 2;
     jb += c.badJ + 12 * Math.max(0, c.maxF - 1) ** 2; rag += c.rag; bad += c.bad;
     if (c.K > 1) lastP += Math.max(0, 0.6 - c.lastFill) ** 2;
     if (c.eff === 'justify' && c.K > 1) wplP += Math.max(0, 3.5 - c.wpl) ** 2;
     else if (c.K > 2) wplP += 2.5 * Math.max(0, 2 - c.wpl) ** 2;
     small += Math.max(0, 1 - c.s / sFloor) ** 2;
+    const nat = quoteNatEm(c.q, sts[c.q]);
+    if (nat > 40) {
+      const longFloor = Math.max(sFloor, D.W * 0.012 * Math.min(1, nat / 80));
+      longSmall += Math.max(0, 1 - c.s / longFloor) ** 2;
+    }
+    if (c.s > 0 && c.lines && c.lines.length) {
+      const ems = c.lines.filter(ln => !ln.author && ln.idx.length).map(ln => ln.W / c.s);
+      if (ems.length) measureP += offRange(median(ems), [12, 28]) ** 2;
+    }
   }
   for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
     const a = cells[i], b = cells[j];
@@ -179,7 +251,7 @@ function evaluate(tr, sts, D){
   const rounds = activeRound > 0 ? countRound(tr, nodes, cells) : 0;
   const roundP = Math.max(0, Math.round(activeRound * n * 0.15) - rounds);
   const score = bad ? Infinity : 40 * vr + 15 * under + 1500 * left / n + 30 * asp / n + 14 * jb / n + 8 * rag / n + 10 * lastP / n +
-    10 * wplP / n + 500 * bad + 30 * small + 1.5 * same + 4 * roundP;
+    10 * wplP / n + 500 * bad + 30 * small + 20 * longSmall + 6 * measureP / n + 1.5 * same + 4 * roundP;
   return {cells, nodes, score, f, rounds};
 }
 /* area fraction the first child would get if the seam passed through (px, py) */
@@ -217,13 +289,23 @@ let progressCb = () => {};
 
 async function search(seed, n, keep, token){
   const rng = mulberry32(seed >>> 0), D = dims();
-  const out = [], idx = qs.map((_, k) => k);
+  const out = [];
   for (let i = 0; i < n; i++) {
     const sts = qs.map(q => randStyle(rng, q));
     const {wts} = weightsOf(sts);
-    const t = buildTree(shuffle(idx.slice(), rng), wts, rng, D.W - 2 * D.m, D.H - 2 * D.m, {n:0});
-    if (cfg.round > 0) roundSome(t, rng, sts, D);
-    const res = evaluate(t, sts, D);
+    const order = seedOrder(sts, rng);
+    const flat = buildTree(order, wts, rng, D.W - 2 * D.m, D.H - 2 * D.m, {n:0}, sts, {flat:true});
+    const flatRes = evaluate(flat, sts, D);
+    let t = flat, res = flatRes;
+    if (cfg.shaped > 0 || cfg.round > 0) {
+      const shaped = clone(flat);
+      if (cfg.shaped > 0) decorateSeams(shaped, rng);
+      if (cfg.round > 0) roundSome(shaped, rng, sts, D);
+      const shapedRes = evaluate(shaped, sts, D);
+      if (Number.isFinite(shapedRes.score) && shapedRes.score <= flatRes.score * 1.12) {
+        t = shaped; res = shapedRes;
+      }
+    }
     out.push({score:res.score, tree:t, sts, res});
     if (out.length > keep * 3) { out.sort((a, b) => a.score - b.score); out.length = keep; }
     if (i % 8 === 7) { progressCb(i / n); await tick(); if (token !== runToken) return null; }
@@ -266,15 +348,13 @@ async function anneal(token, iterations = 1300){
   const start = cres.score;
   let best = cur, bres = cres;
   const N = iterations, T0 = Math.max(0.6, cres.score * 0.08);
+  const leftoverHeavy = cres.cells.reduce((a, c) => a + c.leftover, 0) / Math.max(1, cres.cells.length) > 0.08
+    || cres.cells.some(c => c.box.h > 0 && offRange(c.box.w / c.box.h, aspRange(c.q, cur.sts[c.q])) > 0.35);
   for (let i = 0; i < N; i++) {
     const T = T0 * 0.02 ** (i / N);
-    const prop = {tree:clone(cur.tree), sts:cur.sts.map(st => ({...st}))};
-    const internal = [], leaves = [];
-    collect(prop.tree, internal, leaves);
-    if (internal.length) {
-      const node = internal[(rng() * internal.length) | 0];
-      node.s = clamp((node.s || 0) + (rng() - 0.5) * 0.12, -0.4, 0.4);
-    }
+    const early = i < N * 0.55;
+    const useCoarse = leftoverHeavy ? (early ? rng() < 0.5 : rng() < 0.18) : (early ? rng() < 0.22 : rng() < 0.08);
+    const prop = mutate(cur, rng, !useCoarse);
     const res = evaluate(prop.tree, prop.sts, D);
     const d = res.score - cres.score;
     if (d < 0 || rng() < Math.exp(-d / T)) {

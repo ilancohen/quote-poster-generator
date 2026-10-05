@@ -896,7 +896,14 @@ $('bApply').addEventListener('click', async () => {
   await regenerate({restore:previous});
 });
 
-$('aspect').addEventListener('change', e => { cfg.aspect = selectFromEvent(e).value; render(); saveLocal(); commit(); });
+$('aspect').addEventListener('change', async e => {
+  cfg.aspect = selectFromEvent(e).value;
+  saveLocal();
+  if (!qs.length) { render(); commit(); return; }
+  if (busy) { say('Wait for the current search to finish before changing format.'); return; }
+  say('Format changed — packing a new layout…');
+  await regenerate();
+});
 $('effort').addEventListener('change', e => { cfg.effort = selectFromEvent(e).value; saveLocal(); updateGenPrefsHint(); commit(); });
 $('seed').addEventListener('change', e => { const input = inputFromEvent(e); cfg.seed = clamp(parseInt(input.value, 10) || 1, 1, 999999); input.value = String(cfg.seed); saveLocal(); commit(); });
 $('paletteSwatches').addEventListener('click', e => {
