@@ -166,22 +166,19 @@ async function downloadSVG() {
       : `SVG downloaded with ${result.embedded} embedded font faces.`,
   );
 }
-async function downloadPNG() {
+async function rasterizePoster(scale) {
   if (!tree || !qs.length) {
-    say("Add quotes before exporting a PNG.");
-    return;
+    throw new Error("Add quotes before exporting.");
   }
-  say("Preparing PNG…");
+  const result = await exportSVG();
+  const D = dims();
+  const url = URL.createObjectURL(
+    new Blob([result.svg], { type: "image/svg+xml;charset=utf-8" }),
+  );
   try {
-    const result = await exportSVG();
-    const D = dims();
-    const blob = new Blob([result.svg], {
-      type: "image/svg+xml;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
     const img = new Image();
     await new Promise((resolve, reject) => {
-      img.onload = () => resolve();
+      img.onload = resolve;
       img.onerror = () =>
         reject(
           new Error("Could not rasterize the poster SVG in this browser."),
@@ -189,31 +186,124 @@ async function downloadPNG() {
       img.src = url;
     });
     const canvas = document.createElement("canvas");
-    canvas.width = D.W;
-    canvas.height = D.H;
-    const c = canvas.getContext("2d");
-    if (!c) throw new Error("Could not create a canvas for PNG export.");
-    c.fillStyle = PALS[cfg.pal].paper;
-    c.fillRect(0, 0, D.W, D.H);
-    c.drawImage(img, 0, 0, D.W, D.H);
+    canvas.width = D.W * scale;
+    canvas.height = D.H * scale;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Could not create a canvas for export.");
+    context.fillStyle = PALS[cfg.pal].paper;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return { canvas, result, scale };
+  } finally {
     URL.revokeObjectURL(url);
-    const pngUrl = canvas.toDataURL("image/png");
-    if (!pngUrl || pngUrl === "data:,")
-      throw new Error("PNG export was blocked in this browser.");
-    const link = document.createElement("a");
-    link.href = pngUrl;
-    link.download = "quote-quilt.png";
-    link.click();
+  }
+}
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function exportError(error) {
+  say(
+    error instanceof Error
+      ? error.message
+      : "Poster export failed in this browser.",
+  );
+}
+async function downloadPNG() {
+  const scale = clamp(parseInt($("pngScale").value, 10) || 1, 1, 3);
+  say(`Preparing ${scale}× PNG…`);
+  try {
+    const { canvas, result } = await rasterizePoster(scale);
+    const blob = await new Promise((resolve, reject) =>
+      canvas.toBlob(
+        (image) =>
+          image
+            ? resolve(image)
+            : reject(new Error("PNG export was blocked in this browser.")),
+        "image/png",
+      ),
+    );
+    downloadBlob(blob, `quote-quilt-${scale}x.png`);
     say(
       result.external
-        ? `PNG downloaded; ${result.external} font faces may use fallbacks.`
-        : "PNG downloaded.",
+        ? `${scale}× PNG downloaded; ${result.external} font faces may use fallbacks.`
+        : `${scale}× PNG downloaded (${canvas.width} × ${canvas.height}).`,
     );
   } catch (error) {
-    say(
-      error instanceof Error
-        ? error.message
-        : "PNG export failed in this browser.",
+    exportError(error);
+  }
+}
+async function downloadPDF() {
+  const scale = clamp(parseInt($("pngScale").value, 10) || 1, 1, 3);
+  say("Preparing print-ready PDF…");
+  try {
+    const { canvas, result } = await rasterizePoster(scale);
+    const jpeg = await new Promise((resolve, reject) =>
+      canvas.toBlob(
+        (image) =>
+          image
+            ? resolve(image)
+            : reject(new Error("PDF image encoding failed.")),
+        "image/jpeg",
+        0.96,
+      ),
     );
+    const imageBytes = new Uint8Array(await jpeg.arrayBuffer());
+    const pageW = ((canvas.width * 72) / 300).toFixed(2);
+    const pageH = ((canvas.height * 72) / 300).toFixed(2);
+    const encoder = new TextEncoder();
+    const chunks = [];
+    const offsets = [0];
+    let length = 0;
+    const append = (chunk) => {
+      const bytes = typeof chunk === "string" ? encoder.encode(chunk) : chunk;
+      chunks.push(bytes);
+      length += bytes.length;
+    };
+    append("%PDF-1.4\n");
+    const objects = [
+      "<< /Type /Catalog /Pages 2 0 R >>",
+      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`,
+    ];
+    objects.forEach((body, index) => {
+      offsets.push(length);
+      append(`${index + 1} 0 obj\n${body}\nendobj\n`);
+    });
+    offsets.push(length);
+    append(
+      `4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${canvas.width} /Height ${canvas.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imageBytes.length} >>\nstream\n`,
+    );
+    append(imageBytes);
+    append("\nendstream\nendobj\n");
+    const content = `q\n${pageW} 0 0 ${pageH} 0 0 cm\n/Im0 Do\nQ\n`;
+    offsets.push(length);
+    append(
+      `5 0 obj\n<< /Length ${encoder.encode(content).length} >>\nstream\n${content}endstream\nendobj\n`,
+    );
+    const xref = length;
+    append(
+      `xref\n0 6\n0000000000 65535 f \n${offsets
+        .slice(1)
+        .map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`)
+        .join(
+          "",
+        )}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`,
+    );
+    downloadBlob(
+      new Blob(chunks, { type: "application/pdf" }),
+      "quote-quilt.pdf",
+    );
+    say(
+      result.external
+        ? `PDF downloaded at ${scale}×; ${result.external} font faces may use fallbacks.`
+        : `Print-ready PDF downloaded at ${scale}× (${canvas.width} × ${canvas.height} px).`,
+    );
+  } catch (error) {
+    exportError(error);
   }
 }

@@ -9,10 +9,13 @@
  * @property {HTMLButtonElement} bCopy
  * @property {HTMLButtonElement} bDownloadSVG
  * @property {HTMLButtonElement} bDownloadPNG
+ * @property {HTMLButtonElement} bDownloadPDF
+ * @property {HTMLSelectElement} pngScale
  * @property {HTMLButtonElement} bSeed
  * @property {HTMLButtonElement} bCancel
  * @property {HTMLParagraphElement} swapHint
  * @property {HTMLInputElement} gapNum
+ * @property {HTMLInputElement} seams
  * @property {HTMLElement} progBar
  * @property {HTMLParagraphElement} status
  * @property {HTMLSelectElement} aspect
@@ -38,6 +41,8 @@
  * @property {HTMLButtonElement} bResetSelected
  * @property {HTMLDivElement} moods
  * @property {HTMLDivElement} moodPresets
+ * @property {HTMLDivElement} fontPairings
+ * @property {HTMLSelectElement} layoutStyle
  * @property {HTMLSelectElement} effort
  * @property {HTMLInputElement} seed
  * @property {HTMLParagraphElement} selHint
@@ -71,7 +76,7 @@
  * @property {HTMLButtonElement} selRound
  * @property {HTMLButtonElement} selShape
  * @property {HTMLButtonElement} selFlat
- * @property {HTMLButtonElement} selSwap
+ * @property {HTMLButtonElement} selShapeCycle
  * @property {HTMLTextAreaElement} quotesText
  * @property {HTMLDetailsElement} ioBox
  * @property {HTMLTextAreaElement} io
@@ -80,6 +85,7 @@
  * @property {HTMLButtonElement} bApply
  * @property {HTMLButtonElement} bResetQuotes
  * @property {HTMLButtonElement} bClearJSON
+ * @property {HTMLDivElement} emptyStarters
  */
 /** @template {keyof UIElements} K @param {K} id @returns {UIElements[K]} */
 const $ = (id) => /** @type {UIElements[K]} */ (document.getElementById(id));
@@ -93,8 +99,8 @@ const selectFromEvent = (event) =>
 /** @typedef {'serif'|'sans'|'display'|'script'|'mono'} FontCategory */
 /** @typedef {{n:string,c:FontCategory,w:number[],i?:number,caps?:number,sys?:number}} FontDef */
 /** @typedef {{w:number[],len:number[],br:boolean[],space:number,track:number,wt:number,it:number,caps:number,f:FontDef}} FontMetrics */
-/** @typedef {{font:string,wi:number,italic:number,caps:number,color:number,lock:number,jit:number}} Style */
-/** @typedef {{id:string,text:string,tokens:string[],brAfter:boolean[],author:string,chars:number,emph:number,fontSize:number|null,st:Style|null}} Quote */
+/** @typedef {{font:string,wi:number,italic:number,caps:number,color:number,lock:number,jit:number,hero?:number}} Style */
+/** @typedef {{id:string,text:string,tokens:string[],brAfter:boolean[],author:string,chars:number,emph:number,fontSize:number|null,shapeTarget:'square'|'wide'|'tall'|null,st:Style|null}} Quote */
 /** @typedef {{k:'flat'|'arc'|'ell'|'wave'|'notch'|'step'|'slant'|'scurve',a:number,p:number,w:number}} Seam */
 /** @typedef {{q:number,id?:number,_w?:number}|{d:'x'|'y',a:TreeNode,b:TreeNode,s:number,e?:Seam,_w?:number}} TreeNode */
 /** @typedef {{i0:number,n:number,l:Float64Array,r:Float64Array}} Region */
@@ -146,6 +152,7 @@ const FONTS = [
   { n: "Cormorant Garamond", c: "serif", w: [400, 700], i: 1 },
   { n: "Playfair Display", c: "serif", w: [400, 700, 900], i: 1 },
   { n: "Montserrat", c: "sans", w: [400, 700, 800] },
+  { n: "IBM Plex Sans", c: "sans", w: [400, 500, 600] },
   { n: "Raleway", c: "sans", w: [300, 500, 800] },
   { n: "Josefin Sans", c: "sans", w: [300, 400, 700] },
   { n: "Archivo Narrow", c: "sans", w: [400, 700] },
@@ -207,10 +214,13 @@ const PALS = {
 const cfg = {
   aspect: "2:1",
   gap: 20,
+  seams: false,
   contrast: 0.3,
   color: 0.3,
   pal: "ink",
   moods: { serif: 1, sans: 1, display: 1, script: 0, mono: 0 },
+  fontPair: "custom",
+  layoutStyle: "custom",
   effort: "std",
   seed: 7,
   shaped: 0.45,
@@ -223,10 +233,25 @@ const MOOD_PRESETS = {
   clean: { serif: 1, sans: 1, display: 0, script: 0, mono: 0 },
   full: { serif: 1, sans: 1, display: 1, script: 1, mono: 1 },
 };
+const FONT_PAIRINGS = {
+  editorial: {
+    fonts: ["Libre Baskerville", "IBM Plex Sans"],
+    moods: ["serif", "sans"],
+  },
+  poster: {
+    fonts: ["Bebas Neue", "Libre Baskerville"],
+    moods: ["display", "serif"],
+  },
+  typewriter: {
+    fonts: ["Special Elite", "Archivo Narrow"],
+    moods: ["mono", "sans"],
+  },
+};
 let activeContrast = cfg.contrast,
   activeRound = cfg.round;
 /** @type {Quote[]} */
 let qs = []; // quotes: {id,text,tokens,author,chars,emph,st}
+let restoredShapeTargets = null;
 /** @type {TreeNode|null} */
 let tree = null; // guillotine tree; internal nodes {d,a,b,s,e}, leaves {q}
 let avail = new Set(); // web fonts that loaded
@@ -257,6 +282,19 @@ function activePool() {
   const p = selectedWeb.concat(selectedFallback);
   if (!p.length) return available;
   return p;
+}
+function pairedFonts() {
+  const pairing = FONT_PAIRINGS[cfg.fontPair];
+  if (!pairing) return null;
+  return pairing.fonts.map((name) => {
+    const font = FONTMAP[name];
+    if (!font) return SYS[0];
+    return (
+      activePool().find((candidate) => candidate.n === name) ||
+      SYS.find((candidate) => candidate.c === font.c) ||
+      font
+    );
+  });
 }
 
 /* ---------- quotes ---------- */
@@ -291,6 +329,7 @@ function quoteFromFields(rawText, author) {
     chars: text.length,
     emph: 1,
     fontSize: null,
+    shapeTarget: null,
     st: null,
   };
 }
@@ -325,6 +364,8 @@ function parseQuotes(txt) {
 /* ---------- styles ---------- */
 /** @param {()=>number} rng @returns {FontDef[]} */
 function pickRollFonts(rng) {
+  const paired = pairedFonts();
+  if (paired) return paired;
   const pool = activePool();
   if (!pool.length) return SYS.slice(0, 3);
   /** @type {Record<FontCategory, FontDef[]>} */
@@ -376,6 +417,42 @@ function styleFromFont(f, rng) {
     jit: 0.82 + rng() * 0.4,
   };
 }
+function applyStyleHierarchy(styles) {
+  if (!styles.length) return;
+  let heroIndex = styles.findIndex((style) => style.hero);
+  if (heroIndex < 0)
+    heroIndex = qs.reduce(
+      (best, quote, index) => (quote.chars > qs[best].chars ? index : best),
+      0,
+    );
+  const secondaryFonts = activePool().filter(
+    (font) => !font.caps && font.c !== "display",
+  );
+  if (!secondaryFonts.length)
+    secondaryFonts.push(
+      ...SYS.filter((font) => !font.caps && font.c !== "display"),
+    );
+  styles.forEach((style, index) => {
+    const hero = index === heroIndex;
+    style.hero = hero ? 1 : 0;
+    let font = FONTMAP[style.font] || FONTS[0];
+    if (hero) {
+      style.wi = font.w.length - 1;
+      style.italic = 0;
+      style.caps = 1;
+      return;
+    }
+    if (font.caps || font.c === "display")
+      font =
+        secondaryFonts.find((candidate) => candidate.c === "sans") ||
+        secondaryFonts[0] ||
+        font;
+    style.font = font.n;
+    style.wi = regIndex(font);
+    style.italic = 0;
+    style.caps = 0;
+  });
+}
 /** @param {Style[]} styles @param {()=>number} rng */
 function composeAccents(styles, rng) {
   styles.forEach((st) => {
@@ -397,19 +474,27 @@ function composeAccents(styles, rng) {
 /** @param {()=>number} rng @returns {Style[]} */
 function composeStyles(rng) {
   const fonts = pickRollFonts(rng);
-  const styles = qs.map(() => {
-    let f = fonts[(rng() * fonts.length) | 0];
+  const paired = pairedFonts();
+  const styles = qs.map((q, index) => {
+    let f = paired
+      ? paired[index % paired.length]
+      : fonts[(rng() * fonts.length) | 0];
     if (f.c === "script" && rng() > 0.28)
       f = fonts.find((x) => x.c !== "script") || f;
     return styleFromFont(f, rng);
   });
+  applyStyleHierarchy(styles);
   composeAccents(styles, rng);
   return styles;
 }
 /** @param {()=>number} rng @param {Quote} [q] @returns {Style} */
 function randStyle(rng, q) {
   const pool = activePool();
-  let f = pool[(rng() * pool.length) | 0];
+  const paired = pairedFonts();
+  const quoteIndex = q ? qs.indexOf(q) : -1;
+  let f = paired
+    ? paired[Math.max(0, quoteIndex) % paired.length]
+    : pool[(rng() * pool.length) | 0];
   if (f.c === "script" && rng() > 0.3)
     f = pool.find((x) => x.c !== "script") || f;
   const st = styleFromFont(f, rng);

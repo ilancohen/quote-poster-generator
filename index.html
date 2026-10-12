@@ -21,7 +21,7 @@
       <main class="main">
         <header class="head">
           <h1>Quote Quilt</h1>
-          <p>Edit quotes → New layout → drag seams or download.</p>
+          <p>A typographic study in modular form.</p>
         </header>
         <section class="stage">
           <svg
@@ -71,6 +71,26 @@
               Generate with seed
             </button>
           </div>
+          <div
+            class="bar-group format-group"
+            role="group"
+            aria-label="Poster format and palette"
+          >
+            <label class="sr-only" for="aspect">Poster format</label>
+            <select id="aspect" aria-label="Poster format">
+              <option value="2:1">Wide • 2:1 (Banner)</option>
+              <option value="3:2">Landscape • 3:2 (Print)</option>
+              <option value="1:1">Square • 1:1 (Social)</option>
+              <option value="3:4">Portrait • 3:4 (Print)</option>
+              <option value="2:3">Tall • 2:3 (Print)</option>
+            </select>
+            <div
+              class="palette-swatches compact"
+              id="paletteSwatches"
+              role="group"
+              aria-label="Palette choices"
+            ></div>
+          </div>
           <div class="bar-group" role="group" aria-label="History">
             <button
               class="btn icon"
@@ -95,12 +115,17 @@
           </div>
           <div class="bar-group" role="group" aria-label="Export">
             <button class="btn" id="bCopy" type="button">Copy SVG</button>
-            <button class="btn" id="bDownloadSVG" type="button">
-              Download SVG
-            </button>
+            <button class="btn" id="bDownloadSVG" type="button">SVG</button>
+            <label class="sr-only" for="pngScale">PNG export resolution</label>
+            <select id="pngScale" aria-label="PNG export resolution">
+              <option value="1">PNG 1×</option>
+              <option value="2">PNG 2×</option>
+              <option value="3" selected>PNG 3×</option>
+            </select>
             <button class="btn" id="bDownloadPNG" type="button">
-              Download PNG
+              Export PNG
             </button>
+            <button class="btn" id="bDownloadPDF" type="button">PDF</button>
           </div>
           <button class="btn" id="bCancel" type="button" hidden>Cancel</button>
         </div>
@@ -161,7 +186,28 @@
       </main>
 
       <aside class="panel" id="panel">
-        <details class="sec inspector" id="inspector">
+        <div class="empty-starters" id="emptyStarters" hidden>
+          <p>Start with a collection</p>
+          <div
+            class="starter-actions"
+            role="group"
+            aria-label="Starter quote collections"
+          >
+            <button class="btn" type="button" data-starter="motivational">
+              Motivational
+            </button>
+            <button class="btn" type="button" data-starter="literary">
+              Literary
+            </button>
+            <button class="btn" type="button" data-starter="short">
+              Short &amp; bold
+            </button>
+            <button class="btn" type="button" data-starter="showcase">
+              Typography mix
+            </button>
+          </div>
+        </div>
+        <details class="sec inspector" id="inspector" hidden>
           <summary>Selected quote</summary>
           <button
             class="btn box-reset inspector-reset"
@@ -294,41 +340,32 @@
               </button>
               <button
                 class="btn"
-                id="selSwap"
+                id="selShapeCycle"
                 type="button"
-                data-tooltip="Select a destination quote, then confirm the swap."
+                data-tooltip="Cycle this quote through square, wide, and tall proportions. Neighboring regions reflow to fit."
               >
-                Swap with…
+                Cycle shape
               </button>
             </div>
             <p class="hint swap-hint" id="swapHint" hidden>
-              Tap Swap, then tap another quote to choose a destination.
+              Drag a tile onto another to swap. Keyboard: press S, use arrows,
+              then Enter.
             </p>
             <p class="hint edge-state" id="edgeState" aria-live="polite"></p>
           </div>
         </details>
 
-        <section class="sec">
+        <section class="sec poster-settings">
           <div class="box-heading">
-            <h2>Poster</h2>
+            <h2>Poster spacing</h2>
             <button
               class="btn box-reset"
               id="bResetPoster"
               type="button"
-              data-tooltip="Restore the poster format, gap, and palette defaults."
+              data-tooltip="Restore poster format, gap, and palette defaults."
             >
               Reset
             </button>
-          </div>
-          <div class="row">
-            <label for="aspect">Format</label>
-            <select id="aspect">
-              <option value="2:1">Wide 2:1</option>
-              <option value="3:2">Landscape 3:2</option>
-              <option value="1:1">Square</option>
-              <option value="3:4">Portrait 3:4</option>
-              <option value="2:3">Tall 2:3</option>
-            </select>
           </div>
           <div class="row r">
             <label for="gap">Gap</label
@@ -349,13 +386,11 @@
               data-tooltip="Gap in SVG poster units; edits refit text without rearranging quotes."
             />
           </div>
-          <div class="palette-label">Palette</div>
-          <div
-            class="palette-swatches"
-            id="paletteSwatches"
-            role="group"
-            aria-label="Palette choices"
-          ></div>
+          <label class="chip seam-toggle"
+            ><input id="seams" type="checkbox" /><span
+              >Show seam borders</span
+            ></label
+          >
         </section>
 
         <section class="sec">
@@ -374,160 +409,211 @@
             Applies on next New layout
           </p>
           <div class="generate-controls">
-            <div class="row r">
-              <label for="contrast">Size variation</label>
-              <div class="range-widget">
-                <input
-                  id="contrast"
-                  type="range"
-                  min="0"
-                  max="0.7"
-                  step="any"
-                  data-tooltip="Higher values favor larger relative text for shorter quotes; minimum does not guarantee equal sizes."
-                />
-                <div class="range-ends">
-                  <span>Subtle</span><span>Dramatic</span>
-                </div>
-              </div>
-              <output id="contrastV"></output>
-            </div>
-            <div class="row r">
-              <label for="shaped">Shaped boundaries</label>
-              <div class="range-widget">
-                <input
-                  id="shaped"
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="any"
-                  data-tooltip="Controls how often generated internal seams use non-straight profiles, not their depth."
-                />
-                <div class="range-ends">
-                  <span>Fewer</span><span>More</span>
-                </div>
-              </div>
-              <output id="shapedV"></output>
-            </div>
-            <div class="row r">
-              <label for="color">Approx. accent share</label>
-              <div class="range-widget">
-                <input
-                  id="color"
-                  type="range"
-                  min="0"
-                  max="0.8"
-                  step="any"
-                  data-tooltip="Approximate target share of quotes assigned accent color roles."
-                />
-                <div class="range-ends">
-                  <span>None</span><span>Frequent</span>
-                </div>
-              </div>
-              <output id="colorV"></output>
-            </div>
-            <div
-              class="accent-swatches"
-              id="accentSwatches"
-              aria-label="Accent colors in the current palette"
-            ></div>
-            <div class="row r">
-              <label for="symmetry">Symmetry preference</label>
-              <div class="range-widget">
-                <input
-                  id="symmetry"
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="any"
-                  data-tooltip="Favors centered seam profiles when generating or reshaping boundaries."
-                />
-                <div class="range-ends">
-                  <span>Freeform</span><span>Symmetrical</span>
-                </div>
-              </div>
-              <output id="symmetryV"></output>
-            </div>
             <div class="row">
-              <span>Mood presets</span>
+              <label for="layoutStyle">Layout style</label>
+              <select id="layoutStyle" aria-label="Layout style">
+                <option value="custom">Custom</option>
+                <option value="chaotic">Chaotic</option>
+                <option value="structured">Structured</option>
+                <option value="masonry">Masonry</option>
+              </select>
+            </div>
+            <details class="advanced-settings">
+              <summary>Advanced settings</summary>
+              <div class="row r">
+                <label for="contrast">Size variation</label>
+                <div class="range-widget">
+                  <input
+                    id="contrast"
+                    type="range"
+                    min="0"
+                    max="0.7"
+                    step="any"
+                    data-tooltip="Higher values favor larger relative text for shorter quotes; minimum does not guarantee equal sizes."
+                  />
+                  <div class="range-ends">
+                    <span>Subtle</span><span>Dramatic</span>
+                  </div>
+                </div>
+                <output id="contrastV"></output>
+              </div>
+              <div class="row r">
+                <label for="shaped">Shaped boundaries</label>
+                <div class="range-widget">
+                  <input
+                    id="shaped"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="any"
+                    data-tooltip="Controls how often generated internal seams use non-straight profiles, not their depth."
+                  />
+                  <div class="range-ends">
+                    <span>Fewer</span><span>More</span>
+                  </div>
+                </div>
+                <output id="shapedV"></output>
+              </div>
+              <div class="row r">
+                <label for="color">Approx. accent share</label>
+                <div class="range-widget">
+                  <input
+                    id="color"
+                    type="range"
+                    min="0"
+                    max="0.8"
+                    step="any"
+                    data-tooltip="Approximate target share of quotes assigned accent color roles."
+                  />
+                  <div class="range-ends">
+                    <span>None</span><span>Frequent</span>
+                  </div>
+                </div>
+                <output id="colorV"></output>
+              </div>
               <div
-                class="chips mood-presets"
-                id="moodPresets"
-                role="group"
-                aria-label="Mood presets"
-              >
-                <button
-                  type="button"
-                  class="chip-btn"
-                  data-preset="literary"
-                  data-tooltip="Serif and display families."
-                >
-                  Literary
-                </button>
-                <button
-                  type="button"
-                  class="chip-btn"
-                  data-preset="clean"
-                  data-tooltip="Serif and sans only."
-                >
-                  Clean
-                </button>
-                <button
-                  type="button"
-                  class="chip-btn"
-                  data-preset="full"
-                  data-tooltip="All typeface categories."
-                >
-                  Full
-                </button>
+                class="accent-swatches"
+                id="accentSwatches"
+                aria-label="Accent colors in the current palette"
+              ></div>
+              <div class="row r">
+                <label for="symmetry">Symmetry preference</label>
+                <div class="range-widget">
+                  <input
+                    id="symmetry"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="any"
+                    data-tooltip="Favors centered seam profiles when generating or reshaping boundaries."
+                  />
+                  <div class="range-ends">
+                    <span>Freeform</span><span>Symmetrical</span>
+                  </div>
+                </div>
+                <output id="symmetryV"></output>
               </div>
-            </div>
-            <div class="row">
-              <span>Typeface categories</span>
-              <div class="chips" id="moods">
-                <label
-                  class="chip"
-                  data-tooltip="Include serif families in the random font pool."
-                  ><input type="checkbox" data-mood="serif" /><span
-                    style="font-family: Georgia, serif"
-                    >Serif</span
-                  ></label
+              <div class="row">
+                <span>Visual font pairings</span>
+                <div
+                  class="chips pairing-presets"
+                  id="fontPairings"
+                  role="group"
+                  aria-label="Visual font pairings"
                 >
-                <label
-                  class="chip"
-                  data-tooltip="Include sans families in the random font pool."
-                  ><input type="checkbox" data-mood="sans" /><span
-                    style="font-family: Arial, sans-serif"
-                    >Sans</span
-                  ></label
-                >
-                <label
-                  class="chip"
-                  data-tooltip="Include display families in the random font pool."
-                  ><input type="checkbox" data-mood="display" /><span
-                    style="font-family: Impact, sans-serif"
-                    >Display</span
-                  ></label
-                >
-                <label
-                  class="chip"
-                  data-tooltip="Include script families in the random font pool."
-                  ><input type="checkbox" data-mood="script" /><span
-                    style="font-family: cursive"
-                    >Script</span
-                  ></label
-                >
-                <label
-                  class="chip"
-                  data-tooltip="Include monospaced families in the random font pool."
-                  ><input type="checkbox" data-mood="mono" /><span
-                    style="font-family: monospace"
-                    >Mono</span
-                  ></label
-                >
+                  <button
+                    type="button"
+                    class="chip-btn"
+                    data-pairing="editorial"
+                    data-tooltip="Libre Baskerville with IBM Plex Sans."
+                  >
+                    Editorial
+                  </button>
+                  <button
+                    type="button"
+                    class="chip-btn"
+                    data-pairing="poster"
+                    data-tooltip="Bebas Neue with Libre Baskerville."
+                  >
+                    Poster
+                  </button>
+                  <button
+                    type="button"
+                    class="chip-btn"
+                    data-pairing="typewriter"
+                    data-tooltip="Special Elite with Archivo Narrow."
+                  >
+                    Typewriter
+                  </button>
+                  <button
+                    type="button"
+                    class="chip-btn"
+                    data-pairing="custom"
+                    data-tooltip="Use the selected typeface categories."
+                  >
+                    Custom
+                  </button>
+                </div>
               </div>
-            </div>
-            <details>
-              <summary>Advanced generation</summary>
+              <div class="row">
+                <span>Mood presets</span>
+                <div
+                  class="chips mood-presets"
+                  id="moodPresets"
+                  role="group"
+                  aria-label="Mood presets"
+                >
+                  <button
+                    type="button"
+                    class="chip-btn"
+                    data-preset="literary"
+                    data-tooltip="Serif and display families."
+                  >
+                    Literary
+                  </button>
+                  <button
+                    type="button"
+                    class="chip-btn"
+                    data-preset="clean"
+                    data-tooltip="Serif and sans only."
+                  >
+                    Clean
+                  </button>
+                  <button
+                    type="button"
+                    class="chip-btn"
+                    data-preset="full"
+                    data-tooltip="All typeface categories."
+                  >
+                    Full
+                  </button>
+                </div>
+              </div>
+              <div class="row">
+                <span>Typeface categories</span>
+                <div class="chips" id="moods">
+                  <label
+                    class="chip"
+                    data-tooltip="Include serif families in the random font pool."
+                    ><input type="checkbox" data-mood="serif" /><span
+                      style="font-family: Georgia, serif"
+                      >Serif</span
+                    ></label
+                  >
+                  <label
+                    class="chip"
+                    data-tooltip="Include sans families in the random font pool."
+                    ><input type="checkbox" data-mood="sans" /><span
+                      style="font-family: Arial, sans-serif"
+                      >Sans</span
+                    ></label
+                  >
+                  <label
+                    class="chip"
+                    data-tooltip="Include display families in the random font pool."
+                    ><input type="checkbox" data-mood="display" /><span
+                      style="font-family: Impact, sans-serif"
+                      >Display</span
+                    ></label
+                  >
+                  <label
+                    class="chip"
+                    data-tooltip="Include script families in the random font pool."
+                    ><input type="checkbox" data-mood="script" /><span
+                      style="font-family: cursive"
+                      >Script</span
+                    ></label
+                  >
+                  <label
+                    class="chip"
+                    data-tooltip="Include monospaced families in the random font pool."
+                    ><input type="checkbox" data-mood="mono" /><span
+                      style="font-family: monospace"
+                      >Mono</span
+                    ></label
+                  >
+                </div>
+              </div>
               <div class="row r">
                 <label for="round">Rounded forms</label>
                 <div class="range-widget">

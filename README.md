@@ -8,8 +8,13 @@ Open `index.html` directly in a browser. No install or server is needed.
 
 ## Use
 
-Edit or restore the sample quotes, choose **New layout**, drag seams to adjust
-the regions, swap quotes, and export the poster as SVG or PNG.
+Edit or restore the sample quotes, choose a layout style, and generate a poster.
+Drag seams to adjust regions, drag one quote onto another to swap their
+positions, and double-click a quote to edit it in place. Undo and redo are
+available from the toolbar and with Cmd/Ctrl+Z and Cmd/Ctrl+Y.
+
+Export as SVG, PNG at 1×, 2×, or 3× resolution, or a print-ready PDF. The PDF
+uses the selected raster scale at 300 DPI.
 
 Google Fonts require a network connection. Settings are saved in `localStorage`.
 A seed reproduces a layout only when the other inputs are the same.

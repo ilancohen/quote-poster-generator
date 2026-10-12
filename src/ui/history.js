@@ -18,6 +18,7 @@ const snap = () =>
         st: q.st,
         emph: q.emph,
         fontSize: q.fontSize,
+        shapeTarget: q.shapeTarget,
       })),
     },
     (k, v) => (k === "_w" ? undefined : v),

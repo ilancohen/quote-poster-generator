@@ -5,7 +5,10 @@ function targets(sts) {
   const med = median(qs.map((q) => q.chars + 16));
   return qs.map(
     (q, i) =>
-      Math.pow(med / (q.chars + 16), activeContrast) * q.emph * sts[i].jit,
+      Math.pow(med / (q.chars + 16), activeContrast) *
+      q.emph *
+      (sts[i].hero ? 1.35 : 0.85) *
+      sts[i].jit,
   );
 }
 function weightsOf(sts) {
@@ -47,6 +50,13 @@ function quoteNatEm(i, st) {
 }
 /** @param {number} i @param {Style} [st] @returns {[number, number]} */
 function aspRange(i, st) {
+  const shapeRanges =
+    /** @type {Record<"square"|"wide"|"tall", [number, number]>} */ ({
+      square: [0.82, 1.22],
+      wide: [1.35, 2.4],
+      tall: [0.42, 0.76],
+    });
+  if (qs[i].shapeTarget) return shapeRanges[qs[i].shapeTarget];
   const style = st || qs[i].st;
   const em = Math.max(1, quoteNatEm(i, style));
   const font = style ? FONTMAP[style.font] || FONTS[0] : FONTS[0];
@@ -472,6 +482,65 @@ function adjustSeam(tr, node, value, sts, D) {
   node.s = previous + (desired - previous) * lo;
 }
 
+function shapeError(tr, qi, sts, D) {
+  const cell = layTree(tr, sts, D).cells.find((entry) => entry.q === qi);
+  if (!cell) return Infinity;
+  const box = regionBox(cell.region);
+  if (!box.w || !box.h) return Infinity;
+  return offRange(box.w / box.h, aspRange(qi, sts[qi]));
+}
+
+function reflowShapeTarget(tr, qi, sts, D) {
+  const leaf = leafOf(tr, qi);
+  if (!leaf) return false;
+  const parents = parentsOf(tr),
+    ancestors = [];
+  for (let node = leaf, parent; (parent = parents.get(node)); node = parent)
+    ancestors.push(parent);
+  if (!ancestors.length) return false;
+
+  let currentError = shapeError(tr, qi, sts, D);
+  for (let pass = 0; pass < 3; pass++) {
+    let improved = false;
+    for (const node of ancestors) {
+      const original = {
+        d: node.d,
+        e: node.e ? clone(node.e) : { ...FLAT },
+        s: node.s || 0,
+      };
+      let best = original,
+        bestError = currentError;
+      for (const direction of [original.d, original.d === "x" ? "y" : "x"]) {
+        node.d = direction;
+        node.e = direction === original.d ? clone(original.e) : { ...FLAT };
+        for (let step = -8; step <= 8; step++) {
+          node.s = step / 10;
+          const error = shapeError(tr, qi, sts, D);
+          if (error + 0.005 < bestError) {
+            bestError = error;
+            best = {
+              d: direction,
+              e: clone(node.e),
+              s: node.s,
+            };
+          }
+        }
+      }
+      Object.assign(node, best);
+      if (bestError < currentError) {
+        if (evaluate(tr, sts, D).cells.some((cell) => cell.bad)) {
+          Object.assign(node, original);
+        } else {
+          currentError = shapeError(tr, qi, sts, D);
+          improved = true;
+        }
+      }
+    }
+    if (!improved) break;
+  }
+  return currentError < 0.05;
+}
+
 /* ---------- search ---------- */
 const effortN = () => ({ fast: 120, std: 360, deep: 1200 })[cfg.effort] || 360;
 const effortIters = () =>
@@ -603,6 +672,7 @@ function mutate(cur, rng, fine) {
         roundify(p.tree, pick(L), rng, layTree(p.tree, p.sts, dims()));
       break;
   }
+  applyStyleHierarchy(p.sts);
   return p;
 }
 async function anneal(token, iterations = 1300) {

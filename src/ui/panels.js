@@ -31,6 +31,7 @@ function buildFontSelect(cur) {
 }
 function updateSel() {
   const q = qs[sel];
+  $("inspector").hidden = !q;
   renderQuoteList();
   syncInspectorViewport();
   $("selBody").hidden = !q;
@@ -45,7 +46,6 @@ function updateSel() {
   if (!q) {
     swapMode = false;
     swapDestination = -1;
-    $("selSwap").textContent = "Swap with…";
     $("swapHint").hidden = true;
     return;
   }
@@ -105,16 +105,7 @@ function updateSel() {
   $("selFlat").dataset.tooltip = edgesUnavailable
     ? "Unavailable: this quote has no editable internal boundary."
     : "Straighten this quote's nearest shared boundaries.";
-  const narrow = window.matchMedia("(max-width: 900px)").matches;
-  $("swapHint").hidden = !narrow;
-  $("swapHint").textContent = swapMode
-    ? swapDestination >= 0
-      ? "Tap Swap again to confirm, or tap another quote."
-      : "Tap another quote as the destination, then confirm."
-    : "Tap Swap, then tap another quote to choose a destination.";
-  $("selSwap").dataset.tooltip = narrow
-    ? "Tap to start a swap, tap a destination quote, then confirm. Drag-swap is desktop-only."
-    : "Select a destination quote, then confirm the swap.";
+  $("swapHint").hidden = false;
 }
 const paletteNames = {
   ink: "Ink on white",
@@ -163,16 +154,11 @@ function editSel(fn, live) {
 }
 function pickCell(i) {
   if (swapMode && sel >= 0) {
-    swapDestination = i === sel ? -1 : i;
-    $("selSwap").textContent =
-      swapDestination >= 0 ? "Confirm swap" : "Choose destination";
-    render();
-    updateSel();
-    say(
-      swapDestination >= 0
-        ? "Confirm the selected destination to swap."
-        : "Choose another quote as the destination.",
-    );
+    const source = sel;
+    swapMode = false;
+    swapDestination = -1;
+    if (source !== i) swapQuotes(source, i);
+    else render();
     return;
   }
   sel = sel === i ? -1 : i;
@@ -234,7 +220,6 @@ function finishQuoteChange(message) {
   hoverNodeId = -1;
   swapMode = false;
   swapDestination = -1;
-  $("selSwap").textContent = "Swap with…";
   focusQ = clamp(focusQ, 0, Math.max(0, qs.length - 1));
   mcache.clear();
   acache.clear();
@@ -325,6 +310,7 @@ $("quoteEditor").addEventListener("submit", (event) => {
       st: previous.st,
       emph: previous.emph,
       fontSize: previous.fontSize,
+      shapeTarget: previous.shapeTarget,
     };
     sel = index;
   } else {
@@ -365,6 +351,12 @@ function setQuotes(text, resetStyles) {
   closeQuoteEditor();
   const old = new Map(qs.map((q) => [q.id, q]));
   const next = parseQuotes(text);
+  const pendingShapes = resetStyles ? restoredShapeTargets : null;
+  restoredShapeTargets = null;
+  if (pendingShapes && pendingShapes.length === next.length)
+    next.forEach((quote, index) => {
+      quote.shapeTarget = pendingShapes[index] ?? null;
+    });
   const seen = new Set();
   next.forEach((q) => {
     while (seen.has(q.id)) q.id += "x";
@@ -374,6 +366,7 @@ function setQuotes(text, resetStyles) {
       q.st = { ...o.st };
       q.emph = o.emph;
       q.fontSize = o.fontSize ?? null;
+      q.shapeTarget = o.shapeTarget ?? null;
     }
   });
   qs = next;
@@ -408,7 +401,11 @@ function saveLocal() {
   try {
     localStorage.setItem(
       "quote-quilt",
-      JSON.stringify({ quotes: quoteSource(), cfg }),
+      JSON.stringify({
+        quotes: quoteSource(),
+        cfg,
+        shapeTargets: qs.map((quote) => quote.shapeTarget),
+      }),
     );
   } catch (e) {}
 }
@@ -419,15 +416,25 @@ function restoreLocal() {
       $("quotesText").value = j.quotes;
       const restoredCfg = normalizeImportedConfig(j.cfg || {});
       if (restoredCfg) Object.assign(cfg, restoredCfg);
+      if (
+        Array.isArray(j.shapeTargets) &&
+        j.shapeTargets.every(
+          (shape) =>
+            shape === null || ["square", "wide", "tall"].includes(shape),
+        )
+      )
+        restoredShapeTargets = j.shapeTargets;
     }
   } catch (e) {}
 }
 function syncControls() {
   $("aspect").value = cfg.aspect;
+  $("layoutStyle").value = cfg.layoutStyle;
   $("effort").value = cfg.effort;
   $("seed").value = String(cfg.seed);
   $("gap").value = String(cfg.gap);
   $("gapNum").value = String(cfg.gap);
+  $("seams").checked = cfg.seams;
   $("contrast").value = String(cfg.contrast);
   $("contrastV").textContent = strength(cfg.contrast, [
     "Subtle",
@@ -497,6 +504,13 @@ function syncControls() {
         ),
     );
   });
+  document
+    .querySelectorAll("#fontPairings [data-pairing]")
+    .forEach((button) => {
+      const pairing =
+        /** @type {HTMLElement} */ (button).dataset.pairing || "custom";
+      button.classList.toggle("active", pairing === cfg.fontPair);
+    });
 }
 function strength(value, labels) {
   return labels[
@@ -522,6 +536,7 @@ function toJSON() {
       styles: sts(),
       emph: qs.map((q) => q.emph),
       fontSizes: qs.map((q) => q.fontSize),
+      shapeTargets: qs.map((q) => q.shapeTarget),
     },
     (k, v) => (k === "_w" ? undefined : v),
   );
@@ -593,8 +608,13 @@ function normalizeImportedConfig(saved) {
   }
   if (
     !["2:1", "3:2", "1:1", "3:4", "2:3"].includes(next.aspect) ||
+    typeof next.seams !== "boolean" ||
     !Object.hasOwn(PALS, next.pal) ||
-    !["fast", "std", "deep"].includes(next.effort)
+    !["fast", "std", "deep"].includes(next.effort) ||
+    !(
+      next.fontPair === "custom" || Object.hasOwn(FONT_PAIRINGS, next.fontPair)
+    ) ||
+    !["custom", "chaotic", "structured", "masonry"].includes(next.layoutStyle)
   )
     return null;
   const ranges = {
@@ -666,7 +686,13 @@ function cancelGesture() {
     bodyGesture = null;
     return;
   }
-  if (drag.type === "seam" && drag.node) drag.node.s = drag.initial;
+  if (drag.type === "seam") {
+    if (drag.nodes && drag.initials)
+      drag.nodes.forEach((node, index) => {
+        node.s = drag.initials[index];
+      });
+    else if (drag.node) drag.node.s = drag.initial;
+  }
   drag = null;
   bodyGesture = null;
   render();
@@ -750,6 +776,20 @@ function loadJSON() {
     );
     return;
   }
+  if (
+    j.shapeTargets !== undefined &&
+    (!Array.isArray(j.shapeTargets) ||
+      j.shapeTargets.length !== importedQuotes.length ||
+      j.shapeTargets.some(
+        (shape) =>
+          shape !== null && !["square", "wide", "tall"].includes(shape),
+      ))
+  ) {
+    say(
+      "The saved shape targets are invalid; the current poster is unchanged.",
+    );
+    return;
+  }
   if (j.styles && j.styles.some((st) => !validSavedStyle(st))) {
     say("The saved styles are invalid; the current poster is unchanged.");
     return;
@@ -771,6 +811,7 @@ function loadJSON() {
     } else q.st = randStyle(styleRng, q);
     q.emph = j.emph ? j.emph[i] : 1;
     q.fontSize = j.fontSizes ? j.fontSizes[i] : null;
+    q.shapeTarget = j.shapeTargets ? j.shapeTargets[i] : null;
   });
   syncControls();
   if (!qs.length) {

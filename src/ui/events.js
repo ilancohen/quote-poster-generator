@@ -107,8 +107,27 @@ async function refine() {
   } else say("Nothing better found. Try New layout, or run Refine again.");
 }
 /* ---------- events ---------- */
+document.addEventListener("keydown", (event) => {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+  const target = event.target;
+  if (
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+  )
+    return;
+  const key = event.key.toLowerCase();
+  if (key === "z") {
+    event.preventDefault();
+    if (event.shiftKey) redo();
+    else undo();
+  } else if (key === "y" && !event.shiftKey) {
+    event.preventDefault();
+    redo();
+  }
+});
 $("bReroll").addEventListener("click", reroll);
-$("bRefine").addEventListener("click", refine);
+$("bRefine").addEventListener("click", () => refine());
 $("bUndo").addEventListener("click", undo);
 $("bRedo").addEventListener("click", redo);
 $("bSeed").addEventListener("click", () => regenerate());
@@ -124,6 +143,7 @@ $("bCopy").addEventListener("click", async () => {
 });
 $("bDownloadSVG").addEventListener("click", downloadSVG);
 $("bDownloadPNG").addEventListener("click", downloadPNG);
+$("bDownloadPDF").addEventListener("click", downloadPDF);
 $("bCopyJson").addEventListener("click", () => copyText(toJSON(), "Settings"));
 $("bLoadJson").addEventListener("click", () => {
   if (!$("io").value.trim()) {
@@ -184,6 +204,28 @@ $("effort").addEventListener("change", (e) => {
   updateGenPrefsHint();
   commit();
 });
+$("layoutStyle").addEventListener("change", (event) => {
+  const style = selectFromEvent(event).value;
+  const presets = {
+    chaotic: { contrast: 0.55, shaped: 0.82, round: 0.12, symmetry: 0.16 },
+    structured: { contrast: 0.28, shaped: 0.12, round: 0, symmetry: 0.94 },
+    masonry: { contrast: 0.38, shaped: 0.4, round: 0.14, symmetry: 0.7 },
+  };
+  if (!presets[style]) {
+    cfg.layoutStyle = "custom";
+    saveLocal();
+    updateGenPrefsHint();
+    commit();
+    return;
+  }
+  cfg.layoutStyle = style;
+  Object.assign(cfg, presets[style]);
+  syncControls();
+  saveLocal();
+  updateGenPrefsHint();
+  commit();
+  say(`${style[0].toUpperCase()}${style.slice(1)} layout settings selected.`);
+});
 $("seed").addEventListener("change", (e) => {
   const input = inputFromEvent(e);
   cfg.seed = clamp(parseInt(input.value, 10) || 1, 1, 999999);
@@ -215,8 +257,15 @@ $("gapNum").addEventListener("input", (e) =>
 );
 $("gap").addEventListener("change", commit);
 $("gapNum").addEventListener("change", commit);
+$("seams").addEventListener("change", (e) => {
+  cfg.seams = inputFromEvent(e).checked;
+  saveLocal();
+  render();
+  commit();
+});
 $("contrast").addEventListener("input", (e) => {
   cfg.contrast = +inputFromEvent(e).value;
+  markLayoutCustom();
   $("contrastV").textContent = strength(cfg.contrast, [
     "Subtle",
     "Gentle",
@@ -229,6 +278,7 @@ $("contrast").addEventListener("input", (e) => {
 });
 $("shaped").addEventListener("input", (e) => {
   cfg.shaped = +inputFromEvent(e).value;
+  markLayoutCustom();
   $("shapedV").textContent = strength(cfg.shaped, [
     "Fewer",
     "Light",
@@ -241,6 +291,7 @@ $("shaped").addEventListener("input", (e) => {
 });
 $("round").addEventListener("input", (e) => {
   cfg.round = +inputFromEvent(e).value;
+  markLayoutCustom();
   $("roundV").textContent = strength(cfg.round, [
     "None",
     "Light",
@@ -253,6 +304,7 @@ $("round").addEventListener("input", (e) => {
 });
 $("symmetry").addEventListener("input", (e) => {
   cfg.symmetry = +inputFromEvent(e).value;
+  markLayoutCustom();
   $("symmetryV").textContent = strength(cfg.symmetry, [
     "Freeform",
     "Low",
@@ -297,6 +349,7 @@ moodInputs.forEach((i) =>
       say("Choose at least one typeface category.");
       return;
     }
+    cfg.fontPair = "custom";
     saveLocal();
     syncControls();
     updateGenPrefsHint();
@@ -311,11 +364,39 @@ $("moodPresets").addEventListener("click", (e) => {
   const preset = key && MOOD_PRESETS[key];
   if (!preset) return;
   cfg.moods = { ...preset };
+  cfg.fontPair = "custom";
   saveLocal();
   syncControls();
   updateGenPrefsHint();
   commit();
   say(`Mood preset: ${key}. Applies on next New layout.`);
+});
+$("fontPairings").addEventListener("click", (event) => {
+  const button =
+    event.target instanceof Element
+      ? event.target.closest("[data-pairing]")
+      : null;
+  if (!button) return;
+  const key = /** @type {HTMLElement} */ (button).dataset.pairing || "custom";
+  cfg.fontPair = key;
+  const pairing = FONT_PAIRINGS[key];
+  if (pairing)
+    cfg.moods = {
+      serif: Number(pairing.moods.includes("serif")),
+      sans: Number(pairing.moods.includes("sans")),
+      display: Number(pairing.moods.includes("display")),
+      script: Number(pairing.moods.includes("script")),
+      mono: Number(pairing.moods.includes("mono")),
+    };
+  syncControls();
+  saveLocal();
+  updateGenPrefsHint();
+  commit();
+  say(
+    pairing
+      ? "Font pairing selected. Applies on the next layout."
+      : "Custom font categories selected.",
+  );
 });
 
 $("selFont").addEventListener("change", (e) =>
@@ -477,29 +558,30 @@ $("selFlat").addEventListener("click", () => {
     `Boundary profiles straightened. Effective state: ${$("edgeState").textContent.toLowerCase()}.`,
   );
 });
-$("selSwap").addEventListener("click", () => {
-  if (sel < 0) return;
-  if (swapMode && swapDestination >= 0) {
-    const destination = swapDestination;
-    swapMode = false;
-    swapDestination = -1;
-    $("selSwap").textContent = "Swap with…";
-    swapQuotes(sel, destination);
-    return;
-  }
-  swapMode = !swapMode;
-  swapDestination = -1;
-  $("selSwap").textContent = swapMode ? "Choose destination" : "Swap with…";
-  const narrow = window.matchMedia("(max-width: 900px)").matches;
-  say(
-    swapMode
-      ? narrow
-        ? "Tap a destination quote, then confirm Swap."
-        : "Select a destination quote, then confirm."
-      : "Swap canceled.",
+$("selShapeCycle").addEventListener("click", () => {
+  if (sel < 0 || busy) return;
+  const shapes =
+    /** @type {{name:string,key:NonNullable<Quote["shapeTarget"]>,emph:number}[]} */ ([
+      { name: "Square", key: "square", emph: 1 },
+      { name: "Wide", key: "wide", emph: 1.7 },
+      { name: "Tall", key: "tall", emph: 0.65 },
+    ]);
+  const currentIndex = shapes.findIndex(
+    (shape) => shape.key === qs[sel].shapeTarget,
   );
+  const next = shapes[(currentIndex + 1) % shapes.length];
+  qs[sel].shapeTarget = next.key;
+  qs[sel].emph = next.emph;
+  const fitted = reflowShapeTarget(tree, sel, sts(), dims());
   render();
   updateSel();
+  saveLocal();
+  commit();
+  say(
+    fitted
+      ? `${next.name} proportion applied; neighboring regions reflowed.`
+      : `${next.name} target set; the current tree cannot fit that proportion more closely.`,
+  );
 });
 function bindGeometryPreview(button, action) {
   button.addEventListener("pointerenter", () => {
@@ -526,6 +608,7 @@ bindGeometryPreview($("selFlat"), "flat");
 function resetPoster() {
   cfg.aspect = DEFAULT_CFG.aspect;
   cfg.gap = DEFAULT_CFG.gap;
+  cfg.seams = DEFAULT_CFG.seams;
   cfg.pal = DEFAULT_CFG.pal;
   syncControls();
   render();
@@ -544,6 +627,8 @@ function resetGenerate() {
   ])
     cfg[key] = DEFAULT_CFG[key];
   cfg.moods = clone(DEFAULT_CFG.moods);
+  cfg.fontPair = DEFAULT_CFG.fontPair;
+  cfg.layoutStyle = DEFAULT_CFG.layoutStyle;
   syncControls();
   saveLocal();
   updateGenPrefsHint();
@@ -563,12 +648,14 @@ function resetSelectedQuote() {
   };
   qs[sel].emph = 1;
   qs[sel].fontSize = null;
+  qs[sel].shapeTarget = null;
   for (const node of Object.values(edgeSeams(tree, leafOf(tree, sel)))) {
     node.e = { ...FLAT };
     node.s = 0;
   }
   render();
   updateSel();
+  saveLocal();
   commit();
 }
 $("bResetPoster").addEventListener("click", resetPoster);
@@ -581,6 +668,18 @@ $("bResetQuotes").addEventListener("click", () => {
   $("quotesText").value = DEFAULT_QUOTES;
   $("bApply").click();
 });
+$("emptyStarters").addEventListener("click", (event) => {
+  const button =
+    event.target instanceof Element
+      ? event.target.closest("[data-starter]")
+      : null;
+  if (!button || busy) return;
+  const key = /** @type {HTMLElement} */ (button).dataset.starter || "";
+  const content = STARTER_BUNDLES[key];
+  if (!content) return;
+  $("quotesText").value = content;
+  $("bApply").click();
+});
 $("stage").addEventListener("focus", () =>
   $("stage").classList.add("has-focus"),
 );
@@ -588,10 +687,8 @@ $("stage").addEventListener("blur", () =>
   $("stage").classList.remove("has-focus"),
 );
 function syncInspectorViewport() {
-  if (!window.matchMedia("(max-width: 900px)").matches)
-    $("inspector").open = true;
-  else if (sel < 0) $("inspector").open = false;
-  else $("inspector").open = true;
+  $("inspector").hidden = sel < 0;
+  $("inspector").open = sel >= 0;
 }
 window.addEventListener("resize", syncInspectorViewport);
 syncInspectorViewport();
@@ -600,7 +697,6 @@ $("panel").addEventListener("keydown", (e) => {
   if (swapMode) {
     swapMode = false;
     swapDestination = -1;
-    $("selSwap").textContent = "Swap with…";
     render();
     say("Swap canceled.");
   } else if (sel >= 0) {
@@ -616,25 +712,57 @@ function svgPoint(e) {
   pt.y = e.clientY;
   return pt.matrixTransform(stage.getScreenCTM().inverse());
 }
+let lastTilePointer = { index: -1, time: 0 };
+let inlineEditClick = false;
 stage.addEventListener("pointerdown", (e) => {
   if (busy) return;
   if (!(e.target instanceof Element)) return;
+  const tile = e.target.closest(".hit");
+  if (tile) {
+    const index = +(/** @type {HTMLElement} */ (tile).dataset.q);
+    const now = performance.now();
+    if (
+      e.detail >= 2 ||
+      (lastTilePointer.index === index && now - lastTilePointer.time < 900)
+    ) {
+      lastTilePointer = { index: -1, time: 0 };
+      inlineEditClick = true;
+      bodyGesture = null;
+      e.preventDefault();
+      openQuoteEditor(index);
+      return;
+    }
+    lastTilePointer = { index, time: now };
+  }
   const h = e.target.closest("[data-n]");
   if (h) {
     e.preventDefault();
     const id = +(/** @type {HTMLElement} */ (h).dataset.n);
-    const nd = curRes && curRes.nodes[id];
+    const pairedId = Number(/** @type {HTMLElement} */ (h).dataset.n2);
+    const ids = [id, ...(Number.isInteger(pairedId) ? [pairedId] : [])];
+    const nodes = ids
+      .map((nodeId) => curRes && curRes.nodes[nodeId]?.node)
+      .filter((node) => !!node);
     drag = {
       type: "seam",
       id,
-      node: nd && nd.node,
-      initial: nd ? nd.node.s || 0 : 0,
+      ids,
+      nodes,
+      initials: nodes.map((node) => node.s || 0),
+      node: nodes[0],
+      initial: nodes[0] ? nodes[0].s || 0 : 0,
+      ghostPath: ids
+        .map((nodeId) => {
+          const info = curRes && curRes.nodes[nodeId];
+          return info ? seamPath(info.G, info.c) : "";
+        })
+        .join(" "),
     };
     stage.setPointerCapture(e.pointerId);
     return;
   }
   const hit = e.target.closest(".hit");
-  if (hit && e.pointerType !== "touch")
+  if (hit)
     bodyGesture = {
       q: +(/** @type {HTMLElement} */ (hit).dataset.q),
       x: e.clientX,
@@ -680,10 +808,18 @@ stage.addEventListener("pointermove", (e) => {
     return;
   }
   if (!drag || drag.type !== "seam" || !curRes) return;
-  const nd = curRes.nodes[drag.id];
-  if (!nd) return;
   const p = svgPoint(e);
-  adjustSeam(tree, nd.node, dragFrac(nd, p.x, p.y) - nd.base, sts(), dims());
+  for (const id of drag.ids || [drag.id]) {
+    const nd = curRes.nodes[id];
+    if (nd)
+      adjustSeam(
+        tree,
+        nd.node,
+        dragFrac(nd, p.x, p.y) - nd.base,
+        sts(),
+        dims(),
+      );
+  }
   if (!raf)
     raf = requestAnimationFrame(() => {
       raf = 0;
@@ -730,7 +866,24 @@ stage.addEventListener("keydown", (e) => {
     if (nd) {
       const delta =
         e.key === "ArrowRight" || e.key === "ArrowDown" ? 0.01 : -0.01;
-      adjustSeam(tree, nd.node, (nd.node.s || 0) + delta, sts(), dims());
+      for (const id of [
+        +(/** @type {HTMLElement} */ (handle).dataset.n),
+        ...(Number.isInteger(
+          Number(/** @type {HTMLElement} */ (handle).dataset.n2),
+        )
+          ? [Number(/** @type {HTMLElement} */ (handle).dataset.n2)]
+          : []),
+      ]) {
+        const info = curRes && curRes.nodes[id];
+        if (info)
+          adjustSeam(
+            tree,
+            info.node,
+            (info.node.s || 0) + delta,
+            sts(),
+            dims(),
+          );
+      }
       render();
       /** @type {SVGPathElement|null} */ (
         stage.querySelector(`[data-n="${id}"]`)
@@ -745,7 +898,6 @@ stage.addEventListener("keydown", (e) => {
     else if (swapMode) {
       swapMode = false;
       swapDestination = -1;
-      $("selSwap").textContent = "Swap with…";
       render();
       say("Swap canceled.");
     } else if (sel >= 0) {
@@ -753,6 +905,19 @@ stage.addEventListener("keydown", (e) => {
       render();
       updateSel();
     }
+    e.preventDefault();
+    return;
+  }
+  if ((e.key === "s" || e.key === "S") && sel >= 0) {
+    swapMode = !swapMode;
+    swapDestination = -1;
+    focusQ = sel;
+    render();
+    say(
+      swapMode
+        ? "Swap mode. Use arrow keys to choose a tile, then Enter."
+        : "Swap canceled.",
+    );
     e.preventDefault();
     return;
   }
@@ -764,13 +929,16 @@ stage.addEventListener("keydown", (e) => {
       qs.length;
     if (swapMode) {
       swapDestination = focusQ === sel ? -1 : focusQ;
-      $("selSwap").textContent =
-        swapDestination >= 0 ? "Confirm swap" : "Choose destination";
     }
     render();
     e.preventDefault();
   } else if (e.key === "Enter" || e.key === " ") {
-    if (swapMode) pickCell(focusQ);
+    if (swapMode && focusQ !== sel) {
+      const destination = focusQ;
+      swapMode = false;
+      swapDestination = -1;
+      swapQuotes(sel, destination);
+    } else if (swapMode) say("Choose a different tile with the arrow keys.");
     else {
       sel = sel === focusQ ? -1 : focusQ;
       render();
@@ -781,6 +949,10 @@ stage.addEventListener("keydown", (e) => {
 });
 stage.addEventListener("click", (e) => {
   if (busy) return;
+  if (inlineEditClick) {
+    inlineEditClick = false;
+    return;
+  }
   stage.focus({ preventScroll: true });
   if (suppressClick) {
     suppressClick = false;
@@ -788,8 +960,11 @@ stage.addEventListener("click", (e) => {
   }
   if (!(e.target instanceof Element)) return;
   const hit = e.target.closest(".hit");
-  if (hit) pickCell(+(/** @type {HTMLElement} */ (hit).dataset.q));
-  else if (!e.target.closest("[data-n]") && sel >= 0) {
+  if (hit) {
+    const index = +(/** @type {HTMLElement} */ (hit).dataset.q);
+    if (e.detail === 2) openQuoteEditor(index);
+    else pickCell(index);
+  } else if (!e.target.closest("[data-n]") && sel >= 0) {
     sel = -1;
     swapMode = false;
     render();

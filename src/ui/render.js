@@ -19,6 +19,7 @@ let suppressClick = false;
 let lastSnap = "";
 let DEFAULT_QUOTES = "";
 let STARTER_QUOTES = "";
+let STARTER_BUNDLES = {};
 let editingQuoteId = null;
 /** @type {string|null} generation prefs last applied by New layout / regenerate */
 let appliedGenPrefs = null;
@@ -47,6 +48,8 @@ function genPrefsSnapshot() {
     round: cfg.round,
     symmetry: cfg.symmetry,
     moods: cfg.moods,
+    fontPair: cfg.fontPair,
+    layoutStyle: cfg.layoutStyle,
     effort: cfg.effort,
     color: cfg.color,
   });
@@ -59,6 +62,10 @@ function updateGenPrefsHint() {
 function markGenPrefsApplied() {
   appliedGenPrefs = genPrefsSnapshot();
   updateGenPrefsHint();
+}
+function markLayoutCustom() {
+  cfg.layoutStyle = "custom";
+  $("layoutStyle").value = "custom";
 }
 
 async function loadDefaultQuotes() {
@@ -233,10 +240,14 @@ function posterInner(res, stl, pal, D) {
         t += `<text y="${by.toFixed(2)}"${lsAttr}>${ts}</text>`;
       }
       if (ln.author) {
-        au = `<text x="${(ln.x0 + ln.W).toFixed(2)}" y="${by.toFixed(2)}" text-anchor="end" font-family="${ffam(m.f)}" font-size="${c.a}" font-style="italic" font-weight="400" fill="${pal.ink}" fill-opacity="0.55">${esc(q.author)}</text>`;
+        au = `<text x="${(ln.x0 + ln.W).toFixed(2)}" y="${by.toFixed(2)}" text-anchor="end" font-family="${ffam(m.f)}" font-size="${c.a}" font-style="italic" font-weight="400" fill="${pal.ink}">${esc(q.author)}</text>`;
       }
     });
     o += `<g ${attrs}>${t}</g>${au}`;
+    if (cfg.seams) {
+      const box = regionBox(c.region);
+      o += `<rect x="${box.x.toFixed(1)}" y="${box.y.toFixed(1)}" width="${box.w.toFixed(1)}" height="${box.h.toFixed(1)}" fill="none" stroke="${pal.ink}" stroke-opacity="0.3" stroke-width="1"/>`;
+    }
   }
   return o + "</g>";
 }
@@ -285,13 +296,71 @@ function overlayInner(res, activeTree = tree) {
     if (drag && drag.type === "swap" && drag.destination === c.q)
       classes.push("drop-target");
     if (swapMode && swapDestination === c.q) classes.push("drop-target");
-    o += `<path class="${classes.join(" ")}" data-q="${c.q}" aria-label="Quote ${c.q + 1}" d="${regionPath(c.region)}"/>`;
+    const box = regionBox(c.region),
+      sides = edgeSeams(activeTree, leafOf(activeTree, c.q)),
+      sideIds = Object.fromEntries(
+        Object.entries(sides).map(([side, node]) => [
+          side,
+          res.nodes.findIndex((info) => info.node === node),
+        ]),
+      );
+    o += `<g class="tile-target${sel === c.q ? " selected" : ""}"><path class="${classes.join(" ")}" data-q="${c.q}" aria-label="Quote ${c.q + 1}" d="${regionPath(c.region)}"/><rect class="tile-bounds" x="${box.x.toFixed(1)}" y="${box.y.toFixed(1)}" width="${box.w.toFixed(1)}" height="${box.h.toFixed(1)}"/>`;
+    for (const side of ["left", "right", "top", "bottom"]) {
+      const id = sideIds[side];
+      if (!Number.isInteger(id) || id < 0) continue;
+      const node = res.nodes[id];
+      const rect =
+        side === "left"
+          ? [box.x - 4, box.y + box.h * 0.3, 8, box.h * 0.4]
+          : side === "right"
+            ? [box.x + box.w - 4, box.y + box.h * 0.3, 8, box.h * 0.4]
+            : side === "top"
+              ? [box.x + box.w * 0.3, box.y - 4, box.w * 0.4, 8]
+              : [box.x + box.w * 0.3, box.y + box.h - 4, box.w * 0.4, 8];
+      o += `<rect class="tile-edge-handle edge-${side}" x="${rect[0].toFixed(1)}" y="${rect[1].toFixed(1)}" width="${rect[2].toFixed(1)}" height="${rect[3].toFixed(1)}" data-n="${id}" tabindex="0" role="slider" aria-label="Resize quote ${c.q + 1} from ${side}" aria-valuemin="-0.8" aria-valuemax="0.8" aria-valuenow="${(node.node.s || 0).toFixed(2)}"/>`;
+    }
+    for (const corner of [
+      { x: box.x, y: box.y, sides: ["left", "top"], name: "top left" },
+      {
+        x: box.x + box.w,
+        y: box.y,
+        sides: ["right", "top"],
+        name: "top right",
+      },
+      {
+        x: box.x,
+        y: box.y + box.h,
+        sides: ["left", "bottom"],
+        name: "bottom left",
+      },
+      {
+        x: box.x + box.w,
+        y: box.y + box.h,
+        sides: ["right", "bottom"],
+        name: "bottom right",
+      },
+    ]) {
+      const ids = corner.sides
+        .map((side) => sideIds[side])
+        .filter((id) => id >= 0);
+      if (!ids.length) continue;
+      o += `<rect class="tile-corner" x="${(corner.x - 6).toFixed(1)}" y="${(corner.y - 6).toFixed(1)}" width="12" height="12" data-n="${ids[0]}"${ids[1] === undefined ? "" : ` data-n2="${ids[1]}"`} tabindex="0" role="slider" aria-label="Resize quote ${c.q + 1} from its ${corner.name} corner"/>`;
+    }
+    o += `</g>`;
   }
+  if (drag && drag.type === "seam" && drag.ghostPath)
+    o += `<path class="seam-ghost" d="${drag.ghostPath}"/>`;
   res.nodes.forEach((n, id) => {
     const selected =
       selectedNodes.has(n.node) || (activeNode && activeNode.node === n.node);
     o += `<path class="seamhit-${n.node.d}${selected ? " selected" : ""}" data-n="${id}" data-tooltip="Drag to adjust this shared seam. Focus it and use arrow keys for small nudges." tabindex="0" role="slider" aria-label="Adjust shared seam ${id + 1}" aria-valuemin="-0.8" aria-valuemax="0.8" aria-valuenow="${(n.node.s || 0).toFixed(2)}" d="${seamPath(n.G, n.c)}" fill="none"/>`;
     o += `<path class="seam${selected ? " selected" : ""}" d="${seamPath(n.G, n.c)}" fill="none"/>`;
+    const row = Math.floor(n.G.R.n / 2);
+    const handle =
+      n.node.d === "x"
+        ? [n.c + n.G.offs[row], (n.G.R.i0 + row + 0.5) * 4]
+        : [n.G.box.x + n.G.box.w / 2, n.c + seamY(n.G.e, 0.5, n.G.A)];
+    o += `<circle class="seam-handle" cx="${handle[0].toFixed(1)}" cy="${handle[1].toFixed(1)}" r="7"/>`;
   });
   return o;
 }
@@ -304,9 +373,11 @@ function render() {
     $("bCopy"),
     $("bDownloadSVG"),
     $("bDownloadPNG"),
+    $("bDownloadPDF"),
   ].forEach((button) => {
     button.disabled = empty;
   });
+  $("emptyStarters").hidden = !empty;
   if (!tree || empty) {
     curRes = null;
     stage.innerHTML =

@@ -7,6 +7,7 @@ const SP_UP = 0.85,
   SP_DN = 0.3,
   LS_DN = 0.015;
 const AUTHOR_SCALE = 0.42,
+  AUTHOR_MIN_SIZE = 12,
   AUTHOR_GAP = 1.6;
 const LEAD_MIN = 0.92,
   LEAD_MAX = 1.34,
@@ -32,12 +33,13 @@ function glue(ln, s, sp) {
 function streamOf(q, m) {
   const n = m.w.length,
     hasA = !!q.author;
-  const aw = hasA ? authorWidth(m.f, q.author) * AUTHOR_SCALE : 0;
-  let natEm = aw + (hasA ? AUTHOR_GAP * m.space : 0);
+  const aw = hasA ? authorWidth(m.f, q.author) : 0;
+  let natEm = aw * AUTHOR_SCALE + (hasA ? AUTHOR_GAP * m.space : 0);
   for (let i = 0; i < n; i++) natEm += m.w[i] + (i ? m.space : 0);
   return { m, n, N: n + (hasA ? 1 : 0), hasA, aw, natEm };
 }
-const tokW = (T, j, s) => (j < T.n ? T.m.w[j] : T.aw) * s;
+const tokW = (T, j, s) =>
+  j < T.n ? T.m.w[j] * s : T.aw * Math.max(AUTHOR_MIN_SIZE, AUTHOR_SCALE * s);
 const tokPre = (T, j, s) => (j === T.n ? AUTHOR_GAP : 1) * T.m.space * s;
 
 /* skip tapered tips too narrow for a word at size s; the skipped height still counts as unfilled */
@@ -264,7 +266,9 @@ function breakLines(F, K, s, bs) {
             ? SP_DN * sp * (cnt - 1) + LS_DN * s * Math.max(0, chars - 1)
             : 0;
           if (S < -capDn - 0.01) break;
-          b = lastPen(Math.min(1, nat / W)) * (m.br[j] && j < n - 1 ? 0.5 : 1);
+          b =
+            lastPen(Math.min(1, nat / W)) * (m.br[j] && j < n - 1 ? 0.5 : 1) +
+            (j === n - 1 && cnt === 1 && n > 1 ? 180 : 0);
         } else if (just) {
           if (S >= 0) {
             const cap =
@@ -323,7 +327,11 @@ function breakLines(F, K, s, bs) {
 function lineSet(c, ln) {
   const s = c.s,
     sp = c.m.space * s;
-  const room = ln.author ? ln.W - c.aw * s - AUTHOR_GAP * sp : ln.W;
+  const room = ln.author
+    ? ln.W -
+      c.aw * Math.max(AUTHOR_MIN_SIZE, AUTHOR_SCALE * s) -
+      AUTHOR_GAP * sp
+    : ln.W;
   if (!ln.idx.length) return { x: ln.x0, gap: sp, ls: 0, f: 0 };
   if (
     c.eff === "justify" &&
@@ -339,6 +347,7 @@ function lineSet(c, ln) {
     return { x: ln.x0 + room - ln.nat, gap: sp, ls: 0, f: 0 };
   if (c.eff === "center")
     return { x: ln.x0 + (room - ln.nat) / 2, gap: sp, ls: 0, f: 0 };
+  if (ln.end) return { x: ln.x0 + (room - ln.nat) / 2, gap: sp, ls: 0, f: 0 };
   return { x: ln.x0, gap: sp, ls: 0, f: 0 };
 }
 function cellStats(c) {
@@ -448,6 +457,9 @@ function fitShape(qi, region, m, align, gap) {
     chars: m.len.reduce((a, b) => a + b, 0),
     target: fontSize !== null,
   };
+  const minimumMeasure =
+    Math.min(MEASURE[mode], T.natEm) * Math.min(MIN_SIZE, sCap);
+  if (regionBox(E).w < minimumMeasure) return fail();
   let ch = chooseLines(F, Math.min(MIN_SIZE, sCap), F.target);
   if (!ch) {
     let widest = 0;
@@ -489,7 +501,7 @@ function fitShape(qi, region, m, align, gap) {
     top: pl.top,
     lines: ch.lines,
     aw: T.aw,
-    a: T.hasA ? s * AUTHOR_SCALE : 0,
+    a: T.hasA ? Math.max(AUTHOR_MIN_SIZE, s * AUTHOR_SCALE) : 0,
     leftover: ch.leftover,
   });
   cellStats(c);
